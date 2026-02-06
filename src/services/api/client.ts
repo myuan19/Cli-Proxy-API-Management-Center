@@ -238,6 +238,20 @@ class ApiClient {
   async requestRaw(config: AxiosRequestConfig): Promise<AxiosResponse> {
     return this.instance.request(config);
   }
+
+  /**
+   * 获取用于 SSE/流式请求的完整 URL 和请求头（便于使用 fetch + ReadableStream）
+   */
+  getStreamRequest(path: string): { url: string; headers: Record<string, string> } {
+    const base = this.apiBase.replace(/\/+$/, '');
+    const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+    const url = `${base}/${normalizedPath}`;
+    const headers: Record<string, string> = { Accept: 'text/event-stream' };
+    if (this.managementKey) {
+      headers['Authorization'] = `Bearer ${this.managementKey}`;
+    }
+    return { url, headers };
+  }
 }
 
 // 导出单例

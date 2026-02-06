@@ -19,8 +19,6 @@ import styles from '@/pages/AiProvidersPage.module.scss';
 import { ProviderList } from '../ProviderList';
 import { ProviderStatusBar } from '../ProviderStatusBar';
 import { getStatsBySource, hasDisableAllModelsRule } from '../utils';
-import type { ProviderFormState } from '../types';
-import { ClaudeModal } from './ClaudeModal';
 
 // 健康检查结果类型
 interface ModelHealthResult {
@@ -35,16 +33,11 @@ interface ClaudeSectionProps {
   usageDetails: UsageDetail[];
   loading: boolean;
   disableControls: boolean;
-  isSaving: boolean;
   isSwitching: boolean;
-  isModalOpen: boolean;
-  modalIndex: number | null;
   onAdd: () => void;
   onEdit: (index: number) => void;
   onDelete: (index: number) => void;
   onToggle: (index: number, enabled: boolean) => void;
-  onCloseModal: () => void;
-  onSave: (data: ProviderFormState, index: number | null) => Promise<void>;
 }
 
 export function ClaudeSection({
@@ -53,21 +46,16 @@ export function ClaudeSection({
   usageDetails,
   loading,
   disableControls,
-  isSaving,
   isSwitching,
-  isModalOpen,
-  modalIndex,
   onAdd,
   onEdit,
   onDelete,
   onToggle,
-  onCloseModal,
-  onSave,
 }: ClaudeSectionProps) {
   const { t } = useTranslation();
   const { showNotification } = useNotificationStore();
-  const actionsDisabled = disableControls || isSaving || isSwitching;
-  const toggleDisabled = disableControls || loading || isSaving || isSwitching;
+  const actionsDisabled = disableControls || loading || isSwitching;
+  const toggleDisabled = disableControls || loading || isSwitching;
 
   // 健康检查状态: apiKey -> modelName -> result
   const [healthResults, setHealthResults] = useState<Record<string, Record<string, ModelHealthResult>>>({});
@@ -92,7 +80,7 @@ export function ClaudeSection({
         type: 'claude-api-key',
         name: providerName,
         model: modelName,
-        timeout: 20,
+        timeout: 10,
       });
 
       if (result.providers.length > 0) {
@@ -224,8 +212,6 @@ export function ClaudeSection({
 
     return cache;
   }, [configs, usageDetails]);
-
-  const initialData = modalIndex !== null ? configs[modalIndex] : undefined;
 
   return (
     <>
@@ -405,15 +391,6 @@ export function ClaudeSection({
           }}
         />
       </Card>
-
-      <ClaudeModal
-        isOpen={isModalOpen}
-        editIndex={modalIndex}
-        initialData={initialData}
-        onClose={onCloseModal}
-        onSave={onSave}
-        isSaving={isSaving}
-      />
     </>
   );
 }

@@ -35,6 +35,9 @@
   display: flex;
   flex-direction: column;
   gap: $spacing-xl;
+  padding-bottom: calc(
+    var(--provider-nav-height, 60px) + 12px + env(safe-area-inset-bottom) + #{$spacing-md}
+  );
 }
 
 .section {

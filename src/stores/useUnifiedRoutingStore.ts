@@ -19,6 +19,42 @@ import type {
   RouteListResponse,
 } from '@/types';
 
+const sortRoutesByName = <T extends { id: string; name: string }>(items: T[]): T[] => {
+  return [...items].sort((a, b) => {
+    const nameCompare = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    if (nameCompare !== 0) return nameCompare;
+    return a.id.localeCompare(b.id);
+  });
+};
+
+const sortCredentialsStable = (items: CredentialInfo[]): CredentialInfo[] => {
+  return [...items].sort((a, b) => {
+    const providerCompare = a.provider.localeCompare(b.provider, undefined, {
+      sensitivity: 'base',
+    });
+    if (providerCompare !== 0) return providerCompare;
+    const labelCompare = (a.label || '').localeCompare(b.label || '', undefined, {
+      sensitivity: 'base',
+    });
+    if (labelCompare !== 0) return labelCompare;
+    const prefixCompare = (a.prefix || '').localeCompare(b.prefix || '', undefined, {
+      sensitivity: 'base',
+    });
+    if (prefixCompare !== 0) return prefixCompare;
+    return a.id.localeCompare(b.id);
+  });
+};
+
+const sortRouteStatesByName = <T extends { route_id: string; route_name: string }>(items: T[]): T[] => {
+  return [...items].sort((a, b) => {
+    const nameCompare = a.route_name.localeCompare(b.route_name, undefined, {
+      sensitivity: 'base',
+    });
+    if (nameCompare !== 0) return nameCompare;
+    return a.route_id.localeCompare(b.route_id);
+  });
+};
+
 interface UnifiedRoutingState {
   // Config
   settings: UnifiedRoutingSettings | null;
@@ -164,7 +200,7 @@ export const useUnifiedRoutingStore = create<UnifiedRoutingState>((set, get) => 
     set({ loading: true, error: null });
     try {
       const response = await unifiedRoutingApi.listRoutes();
-      set({ routes: response.routes, loading: false });
+      set({ routes: sortRoutesByName(response.routes), loading: false });
     } catch (error: any) {
       set({ loading: false });
       if (error?.status === 404) {
@@ -294,7 +330,12 @@ export const useUnifiedRoutingStore = create<UnifiedRoutingState>((set, get) => 
   fetchOverview: async () => {
     try {
       const overview = await unifiedRoutingApi.getStateOverview();
-      set({ overview });
+      set({
+        overview: {
+          ...overview,
+          routes: sortRouteStatesByName(overview.routes || []),
+        },
+      });
     } catch (error: any) {
       if (error?.status === 404) {
         console.warn('Unified routing API not available (404)');
@@ -418,7 +459,7 @@ export const useUnifiedRoutingStore = create<UnifiedRoutingState>((set, get) => 
   fetchCredentials: async () => {
     try {
       const response = await unifiedRoutingApi.listCredentials();
-      set({ credentials: response.credentials });
+      set({ credentials: sortCredentialsStable(response.credentials) });
     } catch (error: any) {
       if (error?.status === 404) {
         console.warn('Unified routing API not available (404)');

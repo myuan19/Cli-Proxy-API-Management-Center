@@ -3,8 +3,9 @@
  */
 
 import { apiClient } from './client';
+import { parseSSE } from './sse';
 import type { AuthFilesResponse } from '@/types/authFile';
-import type { OAuthModelMappingEntry } from '@/types';
+import type { OAuthModelAliasEntry } from '@/types';
 
 type StatusError = { status?: number };
 type AuthFileStatusResponse = { status: string; disabled: boolean };
@@ -53,18 +54,18 @@ const normalizeOauthExcludedModels = (payload: unknown): Record<string, string[]
   return result;
 };
 
-const normalizeOauthModelMappings = (payload: unknown): Record<string, OAuthModelMappingEntry[]> => {
+const normalizeOauthModelAlias = (payload: unknown): Record<string, OAuthModelAliasEntry[]> => {
   if (!payload || typeof payload !== 'object') return {};
 
   const record = payload as Record<string, unknown>;
   const source =
-    record['oauth-model-mappings'] ??
     record['oauth-model-alias'] ??
+    record['oauth-model-mappings'] ??
     record.items ??
     payload;
   if (!source || typeof source !== 'object') return {};
 
-  const result: Record<string, OAuthModelMappingEntry[]> = {};
+  const result: Record<string, OAuthModelAliasEntry[]> = {};
 
   Object.entries(source as Record<string, unknown>).forEach(([channel, mappings]) => {
     const key = String(channel ?? '')
@@ -73,25 +74,25 @@ const normalizeOauthModelMappings = (payload: unknown): Record<string, OAuthMode
     if (!key) return;
     if (!Array.isArray(mappings)) return;
 
-	    const seen = new Set<string>();
-	    const normalized = mappings
-	      .map((item) => {
-	        if (!item || typeof item !== 'object') return null;
-	        const entry = item as Record<string, unknown>;
-	        const name = String(entry.name ?? entry.id ?? entry.model ?? '').trim();
-	        const alias = String(entry.alias ?? '').trim();
-	        if (!name || !alias) return null;
-	        const fork = entry.fork === true;
-	        return fork ? { name, alias, fork } : { name, alias };
-	      })
+    const seen = new Set<string>();
+    const normalized = mappings
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const entry = item as Record<string, unknown>;
+        const name = String(entry.name ?? entry.id ?? entry.model ?? '').trim();
+        const alias = String(entry.alias ?? '').trim();
+        if (!name || !alias) return null;
+        const fork = entry.fork === true;
+        return fork ? { name, alias, fork } : { name, alias };
+      })
       .filter(Boolean)
       .filter((entry) => {
-        const mapping = entry as OAuthModelMappingEntry;
-        const dedupeKey = `${mapping.name.toLowerCase()}::${mapping.alias.toLowerCase()}::${mapping.fork ? '1' : '0'}`;
+        const aliasEntry = entry as OAuthModelAliasEntry;
+        const dedupeKey = `${aliasEntry.name.toLowerCase()}::${aliasEntry.alias.toLowerCase()}::${aliasEntry.fork ? '1' : '0'}`;
         if (seen.has(dedupeKey)) return false;
         seen.add(dedupeKey);
         return true;
-      }) as OAuthModelMappingEntry[];
+      }) as OAuthModelAliasEntry[];
 
     if (normalized.length) {
       result[key] = normalized;
@@ -101,8 +102,6 @@ const normalizeOauthModelMappings = (payload: unknown): Record<string, OAuthMode
   return result;
 };
 
-// 后端实际支持的端点是 /oauth-model-alias
-// /oauth-model-mappings 是预留的新端点名称，目前后端未实现
 const OAUTH_MODEL_ALIAS_ENDPOINT = '/oauth-model-alias';
 const OAUTH_MODEL_MAPPINGS_ENDPOINT = '/oauth-model-mappings';
 
@@ -124,7 +123,7 @@ export const authFilesApi = {
 
   downloadText: async (name: string): Promise<string> => {
     const response = await apiClient.getRaw(`/auth-files/download?name=${encodeURIComponent(name)}`, {
-      responseType: 'blob'
+      responseType: 'blob',
     });
     const blob = response.data as Blob;
     return blob.text();
@@ -145,73 +144,87 @@ export const authFilesApi = {
   replaceOauthExcludedModels: (map: Record<string, string[]>) =>
     apiClient.put('/oauth-excluded-models', normalizeOauthExcludedModels(map)),
 
-  // OAuth 模型映射
-  // 先尝试后端实际支持的 /oauth-model-alias，避免不必要的 404 错误
-  async getOauthModelMappings(): Promise<Record<string, OAuthModelMappingEntry[]>> {
+  // OAuth 模型别名
+  async getOauthModelAlias(): Promise<Record<string, OAuthModelAliasEntry[]>> {
     try {
       const data = await apiClient.get(OAUTH_MODEL_ALIAS_ENDPOINT);
-      return normalizeOauthModelMappings(data);
+      return normalizeOauthModelAlias(data);
     } catch (err: unknown) {
       if (getStatusCode(err) !== 404) throw err;
-      // 降级到新端点（如果后端未来实现）
       const data = await apiClient.get(OAUTH_MODEL_MAPPINGS_ENDPOINT);
-      return normalizeOauthModelMappings(data);
+      return normalizeOauthModelAlias(data);
     }
   },
 
-  saveOauthModelMappings: async (channel: string, mappings: OAuthModelMappingEntry[]) => {
+  saveOauthModelAlias: async (channel: string, aliases: OAuthModelAliasEntry[]) => {
     const normalizedChannel = String(channel ?? '')
       .trim()
       .toLowerCase();
-    const normalizedMappings = normalizeOauthModelMappings({ [normalizedChannel]: mappings })[normalizedChannel] ?? [];
+    const normalizedAliases =
+      normalizeOauthModelAlias({ [normalizedChannel]: aliases })[normalizedChannel] ?? [];
 
     try {
-      await apiClient.patch(OAUTH_MODEL_ALIAS_ENDPOINT, { channel: normalizedChannel, aliases: normalizedMappings });
+      await apiClient.patch(OAUTH_MODEL_ALIAS_ENDPOINT, {
+        channel: normalizedChannel,
+        aliases: normalizedAliases,
+      });
       return;
     } catch (err: unknown) {
       if (getStatusCode(err) !== 404) throw err;
-      // 降级到新端点
-      await apiClient.patch(OAUTH_MODEL_MAPPINGS_ENDPOINT, { channel: normalizedChannel, mappings: normalizedMappings });
+      await apiClient.patch(OAUTH_MODEL_MAPPINGS_ENDPOINT, {
+        channel: normalizedChannel,
+        mappings: normalizedAliases,
+      });
     }
   },
 
-  deleteOauthModelMappings: async (channel: string) => {
+  deleteOauthModelAlias: async (channel: string) => {
     const normalizedChannel = String(channel ?? '')
       .trim()
       .toLowerCase();
 
-    const deleteViaPatch = async () => {
+    const clearViaPatch = async (): Promise<boolean> => {
       try {
         await apiClient.patch(OAUTH_MODEL_ALIAS_ENDPOINT, { channel: normalizedChannel, aliases: [] });
         return true;
       } catch (err: unknown) {
-        if (getStatusCode(err) !== 404) throw err;
+        const status = getStatusCode(err);
+        if (status === 405) return false;
+        if (status !== 404) throw err;
+      }
+
+      try {
         await apiClient.patch(OAUTH_MODEL_MAPPINGS_ENDPOINT, { channel: normalizedChannel, mappings: [] });
         return true;
+      } catch (err: unknown) {
+        const status = getStatusCode(err);
+        if (status === 404 || status === 405) return false;
+        throw err;
       }
     };
 
-    try {
-      await deleteViaPatch();
-      return;
-    } catch (err: unknown) {
-      const status = getStatusCode(err);
-      if (status !== 405) throw err;
-    }
+    const patched = await clearViaPatch();
+    if (patched) return;
 
     try {
       await apiClient.delete(`${OAUTH_MODEL_ALIAS_ENDPOINT}?channel=${encodeURIComponent(normalizedChannel)}`);
       return;
     } catch (err: unknown) {
-      if (getStatusCode(err) !== 404) throw err;
+      const status = getStatusCode(err);
+      if (status !== 404) throw err;
+    }
+
+    try {
       await apiClient.delete(`${OAUTH_MODEL_MAPPINGS_ENDPOINT}?channel=${encodeURIComponent(normalizedChannel)}`);
+    } catch (err: unknown) {
+      if (getStatusCode(err) !== 404) throw err;
     }
   },
 
   // 获取认证凭证支持的模型
   async getModelsForAuthFile(name: string): Promise<{ id: string; display_name?: string; type?: string; owned_by?: string }[]> {
     const data = await apiClient.get(`/auth-files/models?name=${encodeURIComponent(name)}`);
-    return (data && Array.isArray(data['models'])) ? data['models'] : [];
+    return data && Array.isArray(data['models']) ? data['models'] : [];
   },
 
   // 健康检查 - 检查认证文件支持的模型
@@ -220,8 +233,8 @@ export const authFilesApi = {
     options?: {
       concurrent?: boolean;
       timeout?: number;
-      model?: string;      // 检查单个模型
-      models?: string;     // 检查多个模型（逗号分隔）
+      model?: string;
+      models?: string;
     }
   ): Promise<{
     auth_id: string;
@@ -252,5 +265,56 @@ export const authFilesApi = {
       params.append('models', options.models);
     }
     return apiClient.get(`/auth-files/health?${params.toString()}`);
-  }
+  },
+
+  /**
+   * 流式健康检查（当前认证文件下所有模型）：每完成一个就回调，超过 30s 未完成的会收到 status: "timeout"
+   */
+  async checkModelsHealthStream(
+    name: string,
+    options: { concurrent?: boolean; timeout?: number },
+    callbacks: {
+      onResult: (item: {
+        model_id: string;
+        display_name?: string;
+        status: 'healthy' | 'unhealthy' | 'timeout';
+        message?: string;
+        latency_ms?: number;
+      }) => void;
+      onDone: () => void;
+    }
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    params.append('name', name);
+    params.append('stream', 'true');
+    if (options?.concurrent) params.append('concurrent', 'true');
+    if (options?.timeout) params.append('timeout', String(options.timeout));
+    const path = `auth-files/health?${params.toString()}`;
+    const { url, headers } = apiClient.getStreamRequest(path);
+    const res = await fetch(url, { headers });
+    if (!res.ok || !res.body) {
+      throw new Error(res.statusText || 'Stream request failed');
+    }
+    await parseSSE(res.body, (event, data) => {
+      if (event === 'result' && data) {
+        try {
+          callbacks.onResult(JSON.parse(data) as Parameters<typeof callbacks.onResult>[0]);
+        } catch {
+          // ignore
+        }
+      } else if (event === 'done') {
+        callbacks.onDone();
+      }
+    });
+  },
+
+  // 获取指定 channel 的模型定义
+  async getModelDefinitions(channel: string): Promise<{ id: string; display_name?: string; type?: string; owned_by?: string }[]> {
+    const normalizedChannel = String(channel ?? '')
+      .trim()
+      .toLowerCase();
+    if (!normalizedChannel) return [];
+    const data = await apiClient.get(`/model-definitions/${encodeURIComponent(normalizedChannel)}`);
+    return data && Array.isArray(data['models']) ? data['models'] : [];
+  },
 };

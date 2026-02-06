@@ -19,12 +19,10 @@ import {
   IconChartLine,
   IconFileText,
   IconInfo,
-  IconKey,
   IconLayoutDashboard,
   IconScrollText,
   IconSettings,
   IconShield,
-  IconSlidersHorizontal,
   IconTimer,
 } from '@/components/ui/icons';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
@@ -40,8 +38,6 @@ import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 
 const sidebarIcons: Record<string, ReactNode> = {
   dashboard: <IconLayoutDashboard size={18} />,
-  settings: <IconSlidersHorizontal size={18} />,
-  apiKeys: <IconKey size={18} />,
   aiProviders: <IconBot size={18} />,
   unifiedRouting: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -255,6 +251,37 @@ export function MainLayout() {
     };
   }, []);
 
+  // 将主内容区的中心点写入 CSS 变量，供底部浮层（如配置面板操作栏）对齐到内容区而非整窗
+  useLayoutEffect(() => {
+    const updateContentCenter = () => {
+      const el = contentRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      document.documentElement.style.setProperty('--content-center-x', `${centerX}px`);
+    };
+
+    updateContentCenter();
+
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined' && contentRef.current
+        ? new ResizeObserver(updateContentCenter)
+        : null;
+
+    if (resizeObserver && contentRef.current) {
+      resizeObserver.observe(contentRef.current);
+    }
+
+    window.addEventListener('resize', updateContentCenter);
+
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+      window.removeEventListener('resize', updateContentCenter);
+    };
+  }, []);
+
   // 5秒后自动收起品牌名称
   useEffect(() => {
     brandCollapseTimer.current = setTimeout(() => {
@@ -367,15 +394,13 @@ export function MainLayout() {
 
   const navItems = [
     { path: '/', label: t('nav.dashboard'), icon: sidebarIcons.dashboard },
-    { path: '/settings', label: t('nav.basic_settings'), icon: sidebarIcons.settings },
-    { path: '/api-keys', label: t('nav.api_keys'), icon: sidebarIcons.apiKeys },
+    { path: '/config', label: t('nav.config_management'), icon: sidebarIcons.config },
     { path: '/unified-routing', label: t('nav.unified_routing'), icon: sidebarIcons.unifiedRouting },
     { path: '/ai-providers', label: t('nav.ai_providers'), icon: sidebarIcons.aiProviders },
     { path: '/auth-files', label: t('nav.auth_files'), icon: sidebarIcons.authFiles },
     { path: '/oauth', label: t('nav.oauth', { defaultValue: 'OAuth' }), icon: sidebarIcons.oauth },
     { path: '/quota', label: t('nav.quota_management'), icon: sidebarIcons.quota },
     { path: '/usage', label: t('nav.usage_stats'), icon: sidebarIcons.usage },
-    { path: '/config', label: t('nav.config_management'), icon: sidebarIcons.config },
     ...(config?.loggingToFile
       ? [{ path: '/logs', label: t('nav.logs'), icon: sidebarIcons.logs }]
       : []),
@@ -386,6 +411,31 @@ export function MainLayout() {
     const trimmedPath =
       pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
     const normalizedPath = trimmedPath === '/dashboard' ? '/' : trimmedPath;
+
+    const aiProvidersIndex = navOrder.indexOf('/ai-providers');
+    if (aiProvidersIndex !== -1) {
+      if (normalizedPath === '/ai-providers') return aiProvidersIndex;
+      if (normalizedPath.startsWith('/ai-providers/')) {
+        if (normalizedPath.startsWith('/ai-providers/gemini')) return aiProvidersIndex + 0.1;
+        if (normalizedPath.startsWith('/ai-providers/codex')) return aiProvidersIndex + 0.2;
+        if (normalizedPath.startsWith('/ai-providers/claude')) return aiProvidersIndex + 0.3;
+        if (normalizedPath.startsWith('/ai-providers/vertex')) return aiProvidersIndex + 0.4;
+        if (normalizedPath.startsWith('/ai-providers/ampcode')) return aiProvidersIndex + 0.5;
+        if (normalizedPath.startsWith('/ai-providers/openai')) return aiProvidersIndex + 0.6;
+        return aiProvidersIndex + 0.05;
+      }
+    }
+
+    const authFilesIndex = navOrder.indexOf('/auth-files');
+    if (authFilesIndex !== -1) {
+      if (normalizedPath === '/auth-files') return authFilesIndex;
+      if (normalizedPath.startsWith('/auth-files/')) {
+        if (normalizedPath.startsWith('/auth-files/oauth-excluded')) return authFilesIndex + 0.1;
+        if (normalizedPath.startsWith('/auth-files/oauth-model-alias')) return authFilesIndex + 0.2;
+        return authFilesIndex + 0.05;
+      }
+    }
+
     const exactIndex = navOrder.indexOf(normalizedPath);
     if (exactIndex !== -1) return exactIndex;
     const nestedIndex = navOrder.findIndex(
@@ -393,6 +443,24 @@ export function MainLayout() {
     );
     return nestedIndex === -1 ? null : nestedIndex;
   };
+
+  const getTransitionVariant = useCallback((fromPathname: string, toPathname: string) => {
+    const normalize = (pathname: string) => {
+      const trimmed =
+        pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+      return trimmed === '/dashboard' ? '/' : trimmed;
+    };
+
+    const from = normalize(fromPathname);
+    const to = normalize(toPathname);
+    const isAuthFiles = (pathname: string) =>
+      pathname === '/auth-files' || pathname.startsWith('/auth-files/');
+    const isAiProviders = (pathname: string) =>
+      pathname === '/ai-providers' || pathname.startsWith('/ai-providers/');
+    if (isAuthFiles(from) && isAuthFiles(to)) return 'ios';
+    if (isAiProviders(from) && isAiProviders(to)) return 'ios';
+    return 'vertical';
+  }, []);
 
   const handleRefreshAll = async () => {
     clearCache();
@@ -551,6 +619,7 @@ export function MainLayout() {
             <PageTransition
               render={(location) => <MainRoutes location={location} />}
               getRouteOrder={getRouteOrder}
+              getTransitionVariant={getTransitionVariant}
               scrollContainerRef={contentRef}
             />
           </main>

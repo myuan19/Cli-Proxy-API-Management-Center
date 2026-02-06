@@ -3,6 +3,7 @@
  */
 
 import { apiClient } from './client';
+import { parseSSE } from './sse';
 import {
   normalizeGeminiKeyConfig,
   normalizeOpenAIProvider,
@@ -252,5 +253,58 @@ export const providersApi = {
     if (options?.timeout) params.append('timeout', String(options.timeout));
     const queryString = params.toString();
     return apiClient.get(`/providers/health${queryString ? `?${queryString}` : ''}`);
+  },
+
+  /**
+   * 流式健康检查：每完成一个就回调，超过 30s 未完成的会收到 status: "timeout"
+   */
+  async checkProvidersHealthStream(
+    options: {
+      type?: string;
+      name?: string;
+      model?: string;
+      models?: string;
+      timeout?: number;
+    },
+    callbacks: {
+      onResult: (item: {
+        id: string;
+        name: string;
+        type: string;
+        label?: string;
+        base_url?: string;
+        status: 'healthy' | 'unhealthy' | 'timeout';
+        message?: string;
+        latency_ms?: number;
+        model_tested?: string;
+      }) => void;
+      onDone: () => void;
+    }
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    params.append('stream', 'true');
+    if (options?.name) params.append('name', options.name);
+    if (options?.type) params.append('type', options.type);
+    if (options?.model) params.append('model', options.model);
+    if (options?.models) params.append('models', options.models);
+    params.append('concurrent', 'true');
+    if (options?.timeout) params.append('timeout', String(options.timeout));
+    const path = `providers/health?${params.toString()}`;
+    const { url, headers } = apiClient.getStreamRequest(path);
+    const res = await fetch(url, { headers });
+    if (!res.ok || !res.body) {
+      throw new Error(res.statusText || 'Stream request failed');
+    }
+    await parseSSE(res.body, (event, data) => {
+      if (event === 'result' && data) {
+        try {
+          callbacks.onResult(JSON.parse(data) as Parameters<typeof callbacks.onResult>[0]);
+        } catch {
+          // ignore malformed
+        }
+      } else if (event === 'done') {
+        callbacks.onDone();
+      }
+    });
   }
 };

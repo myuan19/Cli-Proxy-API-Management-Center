@@ -22,6 +22,7 @@ export interface OpenAIFormState {
   headers: HeaderEntry[];
   modelEntries: ModelEntry[];
   apiKeyEntries: ApiKeyEntry[];
+  testModel?: string;
 }
 
 export interface AmpcodeFormState {

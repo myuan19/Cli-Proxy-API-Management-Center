@@ -3,7 +3,7 @@
  * 路由监控面板 - 展示流量分布、请求追踪
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -34,11 +34,38 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
   const [stats, setStats] = useState<AggregatedStats | null>(null);
   const [traces, setTraces] = useState<RequestTrace[]>([]);
   const [selectedTrace, setSelectedTrace] = useState<RequestTrace | null>(null);
+  const latestRequestIdRef = useRef(0);
+
+  const sortedRoutes = useMemo(() => {
+    return [...routes].sort((a, b) => {
+      const nameCompare = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      if (nameCompare !== 0) return nameCompare;
+      return a.id.localeCompare(b.id);
+    });
+  }, [routes]);
+
+  const sortedLayerDistribution = useMemo(() => {
+    return [...(stats?.layer_distribution ?? [])].sort((a, b) => a.level - b.level);
+  }, [stats?.layer_distribution]);
+
+  const sortedTargetDistribution = useMemo(() => {
+    return [...(stats?.target_distribution ?? [])].sort((a, b) => {
+      const targetCompare = a.target_id.localeCompare(b.target_id, undefined, {
+        sensitivity: 'base',
+      });
+      if (targetCompare !== 0) return targetCompare;
+      return a.credential_id.localeCompare(b.credential_id, undefined, {
+        sensitivity: 'base',
+      });
+    });
+  }, [stats?.target_distribution]);
+  const totalRequests = stats?.total_requests ?? 0;
 
   // Load data - showLoading controls whether to display loading spinner
   // Set to false for background/auto refresh to avoid UI flicker
   const loadData = useCallback(async (showLoading = true) => {
     if (disabled) return;
+    const requestId = ++latestRequestIdRef.current;
     
     // Only show loading on initial load or manual refresh
     if (showLoading) {
@@ -57,15 +84,19 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
       if (statsResult.status === 'fulfilled') {
         // Handle both global stats and route stats response format
         const data = statsResult.value;
-        setStats('stats' in data ? data.stats : data);
+        if (requestId === latestRequestIdRef.current) {
+          setStats('stats' in data ? data.stats : data);
+        }
       }
       if (tracesResult.status === 'fulfilled') {
-        setTraces(tracesResult.value.traces ?? []);
+        if (requestId === latestRequestIdRef.current) {
+          setTraces(tracesResult.value.traces ?? []);
+        }
       }
     } catch (error) {
       console.error('Failed to load monitoring data:', error);
     } finally {
-      if (showLoading) {
+      if (showLoading && requestId === latestRequestIdRef.current) {
         setLoading(false);
       }
     }
@@ -182,7 +213,7 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
                 disabled={disabled}
               >
                 <option value="all">{t('unified_routing.monitor_all_routes')}</option>
-                {routes.map((route) => (
+                {sortedRoutes.map((route) => (
                   <option key={route.id} value={route.id}>
                     {route.name}
                   </option>
@@ -240,14 +271,14 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
             )}
 
             {/* Traffic Distribution */}
-            {stats?.layer_distribution && stats.layer_distribution.length > 0 && (
+            {sortedLayerDistribution.length > 0 && (
               <div className={styles.section}>
                 <div className={styles.sectionTitle}>
                   <span className={styles.icon}>📈</span>
                   {t('unified_routing.traffic_distribution')}
                 </div>
                 <div className={styles.trafficSection}>
-                  {stats.layer_distribution.map((layer) => (
+                  {sortedLayerDistribution.map((layer) => (
                     <div key={layer.level} className={styles.layerBlock}>
                       <div className={styles.layerHeader}>
                         <span className={styles.layerName}>Layer {layer.level}</span>
@@ -269,9 +300,9 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
                       </div>
 
                       {/* Target breakdown within layer */}
-                      {stats.target_distribution && (
+                      {sortedTargetDistribution.length > 0 && (
                         <div className={styles.layerTargets}>
-                          {stats.target_distribution
+                          {sortedTargetDistribution
                             .filter((t) => t.target_id.includes(`L${layer.level}`))
                             .slice(0, 5)
                             .map((target) => (
@@ -285,14 +316,21 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
                                     className={styles.targetBarFill}
                                     style={{
                                       width: `${Math.min(
-                                        (target.requests / stats.total_requests) * 100 * 3,
+                                        totalRequests > 0
+                                          ? (target.requests / totalRequests) * 100 * 3
+                                          : 0,
                                         100
                                       )}%`,
                                     }}
                                   />
                                 </div>
                                 <span className={styles.targetPercent}>
-                                  {((target.requests / stats.total_requests) * 100).toFixed(0)}%
+                                  {(
+                                    totalRequests > 0
+                                      ? (target.requests / totalRequests) * 100
+                                      : 0
+                                  ).toFixed(0)}
+                                  %
                                 </span>
                                 <span
                                   className={`${styles.targetSuccessRate} ${getSuccessRateClass(

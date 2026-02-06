@@ -54,9 +54,11 @@ export interface UsageDetail {
 export interface ApiStats {
   endpoint: string;
   totalRequests: number;
+  successCount: number;
+  failureCount: number;
   totalTokens: number;
   totalCost: number;
-  models: Record<string, { requests: number; tokens: number }>;
+  models: Record<string, { requests: number; successCount: number; failureCount: number; tokens: number }>;
 }
 
 const TOKENS_PER_PRICE_UNIT = 1_000_000;
@@ -542,28 +544,65 @@ export function getApiStats(usageData: any, modelPrices: Record<string, ModelPri
   const result: ApiStats[] = [];
 
   Object.entries(apis as Record<string, any>).forEach(([endpoint, apiData]) => {
-    const models: Record<string, { requests: number; tokens: number }> = {};
+    const models: Record<string, { requests: number; successCount: number; failureCount: number; tokens: number }> = {};
+    let derivedSuccessCount = 0;
+    let derivedFailureCount = 0;
     let totalCost = 0;
 
     const modelsData = apiData?.models || {};
     Object.entries(modelsData as Record<string, any>).forEach(([modelName, modelData]) => {
-      models[modelName] = {
-        requests: modelData.total_requests || 0,
-        tokens: modelData.total_tokens || 0
-      };
+      const details = Array.isArray(modelData.details) ? modelData.details : [];
+      const hasExplicitCounts =
+        typeof modelData.success_count === 'number' || typeof modelData.failure_count === 'number';
+
+      let successCount = 0;
+      let failureCount = 0;
+      if (hasExplicitCounts) {
+        successCount += Number(modelData.success_count) || 0;
+        failureCount += Number(modelData.failure_count) || 0;
+      }
 
       const price = modelPrices[modelName];
-      if (price) {
-        const details = Array.isArray(modelData.details) ? modelData.details : [];
+      if (details.length > 0 && (!hasExplicitCounts || price)) {
         details.forEach((detail: any) => {
-          totalCost += calculateCost({ ...detail, __modelName: modelName }, modelPrices);
+          if (!hasExplicitCounts) {
+            if (detail?.failed === true) {
+              failureCount += 1;
+            } else {
+              successCount += 1;
+            }
+          }
+
+          if (price) {
+            totalCost += calculateCost({ ...detail, __modelName: modelName }, modelPrices);
+          }
         });
       }
+
+      models[modelName] = {
+        requests: modelData.total_requests || 0,
+        successCount,
+        failureCount,
+        tokens: modelData.total_tokens || 0
+      };
+      derivedSuccessCount += successCount;
+      derivedFailureCount += failureCount;
     });
+
+    const hasApiExplicitCounts =
+      typeof apiData?.success_count === 'number' || typeof apiData?.failure_count === 'number';
+    const successCount = hasApiExplicitCounts
+      ? (Number(apiData?.success_count) || 0)
+      : derivedSuccessCount;
+    const failureCount = hasApiExplicitCounts
+      ? (Number(apiData?.failure_count) || 0)
+      : derivedFailureCount;
 
     result.push({
       endpoint: maskUsageSensitiveValue(endpoint) || endpoint,
       totalRequests: apiData.total_requests || 0,
+      successCount,
+      failureCount,
       totalTokens: apiData.total_tokens || 0,
       totalCost,
       models
@@ -579,6 +618,8 @@ export function getApiStats(usageData: any, modelPrices: Record<string, ModelPri
 export function getModelStats(usageData: any, modelPrices: Record<string, ModelPrice>): Array<{
   model: string;
   requests: number;
+  successCount: number;
+  failureCount: number;
   tokens: number;
   cost: number;
 }> {
@@ -586,20 +627,39 @@ export function getModelStats(usageData: any, modelPrices: Record<string, ModelP
     return [];
   }
 
-  const modelMap = new Map<string, { requests: number; tokens: number; cost: number }>();
+  const modelMap = new Map<string, { requests: number; successCount: number; failureCount: number; tokens: number; cost: number }>();
 
   Object.values(usageData.apis as Record<string, any>).forEach(apiData => {
     const models = apiData?.models || {};
     Object.entries(models as Record<string, any>).forEach(([modelName, modelData]) => {
-      const existing = modelMap.get(modelName) || { requests: 0, tokens: 0, cost: 0 };
+      const existing = modelMap.get(modelName) || { requests: 0, successCount: 0, failureCount: 0, tokens: 0, cost: 0 };
       existing.requests += modelData.total_requests || 0;
       existing.tokens += modelData.total_tokens || 0;
 
+      const details = Array.isArray(modelData.details) ? modelData.details : [];
+
       const price = modelPrices[modelName];
-      if (price) {
-        const details = Array.isArray(modelData.details) ? modelData.details : [];
+
+      const hasExplicitCounts =
+        typeof modelData.success_count === 'number' || typeof modelData.failure_count === 'number';
+      if (hasExplicitCounts) {
+        existing.successCount += Number(modelData.success_count) || 0;
+        existing.failureCount += Number(modelData.failure_count) || 0;
+      }
+
+      if (details.length > 0 && (!hasExplicitCounts || price)) {
         details.forEach((detail: any) => {
-          existing.cost += calculateCost({ ...detail, __modelName: modelName }, modelPrices);
+          if (!hasExplicitCounts) {
+            if (detail?.failed === true) {
+              existing.failureCount += 1;
+            } else {
+              existing.successCount += 1;
+            }
+          }
+
+          if (price) {
+            existing.cost += calculateCost({ ...detail, __modelName: modelName }, modelPrices);
+          }
         });
       }
       modelMap.set(modelName, existing);
