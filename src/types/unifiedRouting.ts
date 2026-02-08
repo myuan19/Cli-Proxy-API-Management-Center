@@ -198,7 +198,7 @@ export interface HealthResult {
   target_id: string;
   credential_id: string;
   model: string;
-  status: 'healthy' | 'unhealthy';
+  status: 'healthy' | 'unhealthy' | 'timeout';
   latency_ms?: number;
   message?: string;
   checked_at: string;

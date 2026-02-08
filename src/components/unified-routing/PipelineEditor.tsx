@@ -85,7 +85,7 @@ export function PipelineEditor({
     const newLayer: Layer = {
       level: newLevel,
       strategy: 'round-robin',
-      cooldown_seconds: 60,
+      cooldown_seconds: 0,
       targets: [],
     };
     
@@ -249,7 +249,7 @@ export function PipelineEditor({
                       <input
                         type="number"
                         value={layer.cooldown_seconds}
-                        onChange={(e) => handleUpdateLayer(layer.level, { cooldown_seconds: parseInt(e.target.value) || 60 })}
+                        onChange={(e) => handleUpdateLayer(layer.level, { cooldown_seconds: parseInt(e.target.value) || 0 })}
                         min={0}
                         disabled={disabled || saving}
                       />

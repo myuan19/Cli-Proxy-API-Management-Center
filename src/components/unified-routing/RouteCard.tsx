@@ -80,13 +80,13 @@ export function RouteCard({
   // Error modal state
   const [errorModal, setErrorModal] = useState<ErrorModalInfo | null>(null);
 
-  // Handle "Check All" - check all targets in this route
+  // Handle "Check All" - check all targets in this route via SSE streaming
   const handleCheckAll = async () => {
     if (!pipeline) return;
     
     setCheckingAll(true);
     
-    // Mark all targets as checking
+    // Mark all enabled targets as checking
     const allTargets: Record<string, TargetHealthStatus> = {};
     pipeline.layers.forEach(layer => {
       layer.targets.forEach(target => {
@@ -95,29 +95,36 @@ export function RouteCard({
         }
       });
     });
-    setHealthStatus(allTargets);
+    setHealthStatus({ ...allTargets });
     
     try {
-      const response = await unifiedRoutingApi.triggerHealthCheck(route.id);
-      
-      // Update health status based on results
-      const newStatus: Record<string, TargetHealthStatus> = {};
-      (response.results || []).forEach((result: HealthResult) => {
-        newStatus[result.target_id] = {
-          status: result.status === 'healthy' ? 'success' : 'failed',
-          message: result.message,
-          latency_ms: result.latency_ms,
-        };
+      await unifiedRoutingApi.triggerHealthCheckStream(route.id, {
+        onResult: (result: HealthResult) => {
+          setHealthStatus(prev => ({
+            ...prev,
+            [result.target_id]: {
+              status: result.status === 'healthy' ? 'success' : 'failed',
+              message: result.message,
+              latency_ms: result.latency_ms,
+            },
+          }));
+        },
+        onDone: () => {
+          setCheckingAll(false);
+        },
       });
-      setHealthStatus(newStatus);
     } catch (error) {
       console.error('Check all failed:', error);
-      // Mark all as failed on error
-      const errorStatus: Record<string, TargetHealthStatus> = {};
-      Object.keys(allTargets).forEach(id => {
-        errorStatus[id] = { status: 'failed', message: 'Check failed' };
+      // Mark remaining "checking" targets as failed
+      setHealthStatus(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(id => {
+          if (updated[id].status === 'checking') {
+            updated[id] = { status: 'failed', message: 'Check failed' };
+          }
+        });
+        return updated;
       });
-      setHealthStatus(errorStatus);
     } finally {
       setCheckingAll(false);
     }

@@ -8,6 +8,7 @@ const log = (msg: string, ...args: any[]) => {
 };
 
 import { apiClient } from './client';
+import { parseSSE } from './sse';
 import type {
   UnifiedRoutingSettings,
   HealthCheckConfig,
@@ -23,6 +24,7 @@ import type {
   TracesResponse,
   RequestTrace,
   HealthCheckResponse,
+  HealthResult,
   HealthHistoryResponse,
   CredentialsResponse,
   CredentialInfo,
@@ -198,6 +200,42 @@ export async function triggerHealthCheck(routeId?: string, targetId?: string): P
   return apiClient.post(url);
 }
 
+/**
+ * 流式健康检查：并发检查所有目标，每完成一个就通过 SSE 回调。
+ * 超过 30s 未完成的目标会收到 status: "timeout"。
+ */
+export async function triggerHealthCheckStream(
+  routeId: string | undefined,
+  callbacks: {
+    onResult: (item: HealthResult) => void;
+    onDone: () => void;
+  }
+): Promise<void> {
+  const params = new URLSearchParams();
+  params.append('stream', 'true');
+  let basePath = `${BASE_PATH}/health/check`;
+  if (routeId) {
+    basePath = `${BASE_PATH}/health/check/routes/${routeId}`;
+  }
+  const path = `${basePath}?${params.toString()}`;
+  const { url, headers } = apiClient.getStreamRequest(path.startsWith('/') ? path.slice(1) : path);
+  const res = await fetch(url, { method: 'POST', headers });
+  if (!res.ok || !res.body) {
+    throw new Error(res.statusText || 'Stream request failed');
+  }
+  await parseSSE(res.body, (event, data) => {
+    if (event === 'result' && data) {
+      try {
+        callbacks.onResult(JSON.parse(data) as HealthResult);
+      } catch {
+        // ignore parse errors
+      }
+    } else if (event === 'done') {
+      callbacks.onDone();
+    }
+  });
+}
+
 // Simulate route types
 export interface SimulateTargetResult {
   target_id: string;
@@ -357,6 +395,7 @@ export const unifiedRoutingApi = {
   
   // Health
   triggerHealthCheck,
+  triggerHealthCheckStream,
   getHealthSettings,
   updateHealthSettings,
   getHealthHistory,
