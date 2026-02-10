@@ -216,6 +216,16 @@ export function UnifiedRoutingPage() {
   };
 
   // Route handlers
+  const handleCloseRouteModal = useCallback(() => {
+    setRouteModalOpen(false);
+    setEditingRoute(null);
+  }, []);
+
+  const handleCloseTargetModal = useCallback(() => {
+    setTargetModalOpen(false);
+    setEditingTarget(null);
+  }, []);
+
   const handleAddRoute = () => {
     setEditingRoute(null);
     setRouteModalOpen(true);
@@ -229,7 +239,7 @@ export function UnifiedRoutingPage() {
     }
   };
 
-  const handleSaveRoute = async (data: { name: string; description?: string; enabled: boolean }) => {
+  const handleSaveRoute = async (data: { name: string; aliases?: string[]; description?: string; enabled: boolean }) => {
     try {
       if (editingRoute) {
         await updateRoute(editingRoute.id, data);
@@ -239,6 +249,7 @@ export function UnifiedRoutingPage() {
         showNotification(t('unified_routing.route_created'), 'success');
       }
       setRouteModalOpen(false);
+      setEditingRoute(null);
       await fetchRoutes();
     } catch (error) {
       showNotification(getErrorMessage(error), 'error');
@@ -545,7 +556,7 @@ export function UnifiedRoutingPage() {
         open={routeModalOpen}
         route={editingRoute}
         saving={saving}
-        onClose={() => setRouteModalOpen(false)}
+        onClose={handleCloseRouteModal}
         onSave={handleSaveRoute}
       />
 
@@ -556,10 +567,7 @@ export function UnifiedRoutingPage() {
           layerLevel={editingTarget.layerLevel}
           credentials={credentials}
           saving={saving}
-          onClose={() => {
-            setTargetModalOpen(false);
-            setEditingTarget(null);
-          }}
+          onClose={handleCloseTargetModal}
           onSave={handleSaveTarget}
         />
       )}

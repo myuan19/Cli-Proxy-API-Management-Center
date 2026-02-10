@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import { LoginPage } from '@/pages/LoginPage';
+import { DetailedRequestsPage } from '@/pages/DetailedRequestsPage';
 import { NotificationContainer } from '@/components/common/NotificationContainer';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -32,6 +33,14 @@ function App() {
       <ConfirmationModal />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/detailed-requests"
+          element={
+            <ProtectedRoute>
+              <DetailedRequestsPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/*"
           element={

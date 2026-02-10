@@ -83,6 +83,7 @@ export async function getRoute(routeId: string): Promise<RouteDetailResponse> {
 
 export async function createRoute(data: {
   name: string;
+  aliases?: string[];
   description?: string;
   enabled?: boolean;
   pipeline?: Pipeline;
@@ -94,6 +95,7 @@ export async function updateRoute(
   routeId: string,
   data: {
     name: string;
+    aliases?: string[];
     description?: string;
     enabled?: boolean;
     pipeline?: Pipeline;

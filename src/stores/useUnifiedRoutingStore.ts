@@ -93,8 +93,8 @@ interface UnifiedRoutingState {
   // Actions - Routes
   fetchRoutes: () => Promise<void>;
   selectRoute: (routeId: string | null) => Promise<void>;
-  createRoute: (data: { name: string; description?: string; enabled?: boolean; pipeline?: Pipeline }) => Promise<string>;
-  updateRoute: (routeId: string, data: { name: string; description?: string; enabled?: boolean; pipeline?: Pipeline }) => Promise<void>;
+  createRoute: (data: { name: string; aliases?: string[]; description?: string; enabled?: boolean; pipeline?: Pipeline }) => Promise<string>;
+  updateRoute: (routeId: string, data: { name: string; aliases?: string[]; description?: string; enabled?: boolean; pipeline?: Pipeline }) => Promise<void>;
   toggleRoute: (routeId: string, enabled: boolean) => Promise<void>;
   deleteRoute: (routeId: string) => Promise<void>;
   

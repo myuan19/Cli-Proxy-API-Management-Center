@@ -204,6 +204,13 @@ export function RouteCard({
         <div className={styles.headerLeft}>
           <span className={styles.expandIcon}>{expanded ? '▼' : '▶'}</span>
           <span className={styles.routeName}>{route.name}</span>
+          {route.aliases && route.aliases.length > 0 && (
+            <span className={styles.aliasBadges}>
+              {route.aliases.map((alias) => (
+                <span key={alias} className={styles.aliasBadge}>{alias}</span>
+              ))}
+            </span>
+          )}
           {!route.enabled && (
             <span className={styles.disabledBadge}>{t('common.disabled')}</span>
           )}

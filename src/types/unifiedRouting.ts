@@ -19,6 +19,7 @@ export interface HealthCheckConfig {
 export interface Route {
   id: string;
   name: string;
+  aliases?: string[];
   description?: string;
   enabled: boolean;
   created_at?: string;

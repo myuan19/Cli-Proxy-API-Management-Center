@@ -17,6 +17,7 @@ import {
   IconTrash2,
   IconX,
 } from '@/components/ui/icons';
+import { DetailedRequestsTab } from '@/components/logs/DetailedRequestsTab';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
 import { logsApi } from '@/services/api/logs';
@@ -368,7 +369,7 @@ const copyToClipboard = async (text: string) => {
   }
 };
 
-type TabType = 'logs' | 'errors';
+type TabType = 'logs' | 'errors' | 'details';
 
 export function LogsPage() {
   const { t } = useTranslation();
@@ -841,6 +842,13 @@ export function LogsPage() {
         >
           {t('logs.error_logs_modal_title')}
         </button>
+        <button
+          type="button"
+          className={`${styles.tabItem} ${activeTab === 'details' ? styles.tabActive : ''}`}
+          onClick={() => setActiveTab('details')}
+        >
+          {t('detailed_requests.tab_title')}
+        </button>
       </div>
 
       <div className={styles.content}>
@@ -1146,6 +1154,10 @@ export function LogsPage() {
               </div>
             </div>
           </Card>
+        )}
+
+        {activeTab === 'details' && (
+          <DetailedRequestsTab disabled={disableControls} />
         )}
       </div>
 

@@ -43,6 +43,21 @@
   color: var(--text-primary);
 }
 
+.aliasBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.aliasBadge {
+  font-size: 0.7rem;
+  padding: 1px 7px;
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--primary-color, #3b82f6);
+  border-radius: 4px;
+  font-family: monospace;
+}
+
 .disabledBadge {
   font-size: 0.75rem;
   padding: 0.125rem 0.5rem;
