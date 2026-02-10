@@ -1249,6 +1249,42 @@
   line-height: 1;
 }
 
+// 模型弹窗 footer 左侧：代理 URL + 代理状态小点
+.modelsModalFooterLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  margin-right: 12px;
+}
+
+.proxyUrlText {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+.proxyDotUsed,
+.proxyDotUnused {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.proxyDotUsed {
+  background-color: #22c55e;
+}
+
+.proxyDotUnused {
+  background-color: #ef4444;
+}
+
 // 排除模型勾选列表
 .excludedCheckList {
   display: flex;

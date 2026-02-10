@@ -70,6 +70,22 @@
   }
 }
 
+/* Embedded details tab: constrain height so inner card list can scroll; cap so parent growth doesn't stretch this */
+.detailsTabWrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-height: 85vh;
+  overflow: hidden;
+
+  @include mobile {
+    min-height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
 .logCard {
   display: flex;
   flex-direction: column;

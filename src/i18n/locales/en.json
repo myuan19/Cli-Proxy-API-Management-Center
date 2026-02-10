@@ -457,7 +457,10 @@
     "quota_refresh_single": "Refresh quota",
     "quota_refresh_hint": "Refresh quota for this credential only",
     "quota_refresh_success": "Quota refreshed for \"{{name}}\"",
-    "quota_refresh_failed": "Failed to refresh quota for \"{{name}}\": {{message}}"
+    "quota_refresh_failed": "Failed to refresh quota for \"{{name}}\": {{message}}",
+    "proxy_not_configured": "No proxy configured",
+    "proxy_used_tooltip": "Proxy: in use",
+    "proxy_not_used_tooltip": "Proxy: not in use"
   },
   "antigravity_quota": {
     "title": "Antigravity Quota",

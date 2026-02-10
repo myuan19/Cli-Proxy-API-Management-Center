@@ -34,7 +34,7 @@ export function DetailedRequestsPage() {
       </a>
       <h1 className={styles.title}>{t('detailed_requests.page_title')}</h1>
       <p className={styles.subtitle}>{t('detailed_requests.page_subtitle')}</p>
-      <DetailedRequestsTab />
+      <DetailedRequestsTab fullPage />
     </div>
   );
 }

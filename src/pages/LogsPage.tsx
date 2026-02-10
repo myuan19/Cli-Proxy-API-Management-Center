@@ -1157,7 +1157,9 @@ export function LogsPage() {
         )}
 
         {activeTab === 'details' && (
-          <DetailedRequestsTab disabled={disableControls} />
+          <div className={styles.detailsTabWrap}>
+            <DetailedRequestsTab disabled={disableControls} />
+          </div>
         )}
       </div>
 

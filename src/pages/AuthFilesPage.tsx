@@ -287,6 +287,8 @@ export function AuthFilesPage() {
     message?: string;
     latency_ms?: number;
   }>>({});
+  const [healthCheckProxyUsed, setHealthCheckProxyUsed] = useState<boolean | null>(null); // 健康检查是否走了代理，null 表示未检查
+  const [modelsModalItem, setModelsModalItem] = useState<AuthFileItem | null>(null); // 当前模型弹窗对应的认证文件，用于显示 proxy_url
 
   // OAuth 排除模型相关
   const [excluded, setExcluded] = useState<Record<string, string[]>>({});
@@ -1001,8 +1003,10 @@ export function AuthFilesPage() {
   const showModels = async (item: AuthFileItem) => {
     setModelsFileName(item.name);
     setModelsFileType(item.type || '');
+    setModelsModalItem(item);
     setModelsList([]);
     setModelsError(null);
+    setHealthCheckProxyUsed(null);
     setModelsModalOpen(true);
 
     const cached = modelsCacheRef.current.get(item.name);
@@ -1042,6 +1046,7 @@ export function AuthFilesPage() {
 
     setHealthChecking(true);
     setHealthResults({});
+    setHealthCheckProxyUsed(null);
     const streamResultsRef: Array<{ status: 'healthy' | 'unhealthy' | 'timeout' }> = [];
 
     try {
@@ -1049,6 +1054,9 @@ export function AuthFilesPage() {
         modelsFileName,
         { concurrent: true, timeout: 10 },
         {
+          onMeta: (meta) => {
+            setHealthCheckProxyUsed(meta.proxy_used);
+          },
           onResult: (item) => {
             streamResultsRef.push({ status: item.status });
             setHealthResults((prev) => ({
@@ -1159,6 +1167,9 @@ export function AuthFilesPage() {
             latency_ms: modelResult.latency_ms,
           },
         }));
+        if (typeof result.proxy_used === 'boolean') {
+          setHealthCheckProxyUsed(result.proxy_used);
+        }
 
         if (modelResult.status === 'healthy') {
           showNotification(
@@ -2251,12 +2262,39 @@ export function AuthFilesPage() {
         onClose={() => {
           setModelsModalOpen(false);
           setHealthResults({});
+          setHealthCheckProxyUsed(null);
+          setModelsModalItem(null);
         }}
         title={
           t('auth_files.models_title', { defaultValue: '支持的模型' }) + ` - ${modelsFileName}`
         }
         footer={
           <>
+            <div className={styles.modelsModalFooterLeft}>
+              <span
+                className={styles.proxyUrlText}
+                title={modelsModalItem?.proxy_url ?? modelsModalItem?.['proxy_url'] ?? ''}
+              >
+                {(modelsModalItem?.proxy_url ?? modelsModalItem?.['proxy_url'] ?? '').trim()
+                  ? (() => {
+                      const url = String((modelsModalItem?.proxy_url ?? modelsModalItem?.['proxy_url']) ?? '');
+                      return url.length > 40 ? `${url.slice(0, 40)}…` : url;
+                    })()
+                  : t('auth_files.proxy_not_configured', { defaultValue: '未配置代理' })}
+              </span>
+              {healthCheckProxyUsed !== null && (
+                <span
+                  className={
+                    healthCheckProxyUsed ? styles.proxyDotUsed : styles.proxyDotUnused
+                  }
+                  title={
+                    healthCheckProxyUsed
+                      ? t('auth_files.proxy_used_tooltip', { defaultValue: '代理：已使用' })
+                      : t('auth_files.proxy_not_used_tooltip', { defaultValue: '代理：未使用' })
+                  }
+                />
+              )}
+            </div>
             <Button
               variant="secondary"
               onClick={handleHealthCheck}
@@ -2268,6 +2306,8 @@ export function AuthFilesPage() {
             <Button variant="secondary" onClick={() => {
               setModelsModalOpen(false);
               setHealthResults({});
+              setHealthCheckProxyUsed(null);
+              setModelsModalItem(null);
             }}>
               {t('common.close')}
             </Button>

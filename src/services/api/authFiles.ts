@@ -239,6 +239,7 @@ export const authFilesApi = {
   ): Promise<{
     auth_id: string;
     status: 'healthy' | 'unhealthy' | 'partial';
+    proxy_used?: boolean;
     healthy_count: number;
     unhealthy_count: number;
     total_count: number;
@@ -274,6 +275,7 @@ export const authFilesApi = {
     name: string,
     options: { concurrent?: boolean; timeout?: number },
     callbacks: {
+      onMeta?: (meta: { auth_id: string; proxy_used: boolean }) => void;
       onResult: (item: {
         model_id: string;
         display_name?: string;
@@ -296,7 +298,13 @@ export const authFilesApi = {
       throw new Error(res.statusText || 'Stream request failed');
     }
     await parseSSE(res.body, (event, data) => {
-      if (event === 'result' && data) {
+      if (event === 'meta' && data && callbacks.onMeta) {
+        try {
+          callbacks.onMeta(JSON.parse(data) as { auth_id: string; proxy_used: boolean });
+        } catch {
+          // ignore
+        }
+      } else if (event === 'result' && data) {
         try {
           callbacks.onResult(JSON.parse(data) as Parameters<typeof callbacks.onResult>[0]);
         } catch {

@@ -457,7 +457,10 @@
     "quota_refresh_single": "刷新额度",
     "quota_refresh_hint": "仅刷新当前凭证的额度数据",
     "quota_refresh_success": "已刷新 \"{{name}}\" 的额度",
-    "quota_refresh_failed": "刷新 \"{{name}}\" 的额度失败：{{message}}"
+    "quota_refresh_failed": "刷新 \"{{name}}\" 的额度失败：{{message}}",
+    "proxy_not_configured": "未配置代理",
+    "proxy_used_tooltip": "代理：已使用",
+    "proxy_not_used_tooltip": "代理：未使用"
   },
   "antigravity_quota": {
     "title": "Antigravity 额度",
