@@ -6,6 +6,7 @@
  * 返回链接 + 标题 + 副标题 + 完整内容区。
  */
 
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { DetailedRequestsTab } from '@/components/logs/DetailedRequestsTab';
@@ -14,6 +15,10 @@ import styles from './DetailedRequestsPage.module.scss';
 export function DetailedRequestsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = 'CLI Proxy API Detailed Requests';
+  }, []);
 
   return (
     <div className={styles.page}>
