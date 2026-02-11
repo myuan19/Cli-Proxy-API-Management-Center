@@ -176,17 +176,8 @@ export async function resetTarget(targetId: string): Promise<{
   return apiClient.post(`${BASE_PATH}/state/targets/${targetId}/reset`);
 }
 
-export async function forceCooldown(
-  targetId: string,
-  durationSeconds?: number
-): Promise<{
-  message: string;
-  target_id: string;
-  duration_seconds: number;
-}> {
-  return apiClient.post(`${BASE_PATH}/state/targets/${targetId}/force-cooldown`, {
-    duration_seconds: durationSeconds,
-  });
+export async function forceCooldown(targetId: string): Promise<{ message: string; target_id: string }> {
+  return apiClient.post(`${BASE_PATH}/state/targets/${targetId}/force-cooldown`, {});
 }
 
 // ================== Health ==================

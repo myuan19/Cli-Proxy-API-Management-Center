@@ -10,7 +10,6 @@ export interface UnifiedRoutingSettings {
 }
 
 export interface HealthCheckConfig {
-  default_cooldown_seconds: number;
   check_interval_seconds: number;
   check_timeout_seconds: number;
   max_consecutive_failures: number;
@@ -34,7 +33,6 @@ export interface Pipeline {
 export interface Layer {
   level: number;
   strategy: LoadStrategy;
-  cooldown_seconds: number;
   targets: Target[];
 }
 
@@ -55,7 +53,7 @@ export type LoadStrategy =
 
 // ================== Runtime State Types ==================
 
-export type TargetStatus = 'healthy' | 'cooling';
+export type TargetStatus = 'healthy' | 'cooling' | 'checking';
 
 export interface TargetState {
   target_id: string;

@@ -1,7 +1,10 @@
 .container {
   padding: 1.5rem;
   max-width: 1400px;
+  min-width: 800px;
+  width: 100%;
   margin: 0 auto;
+  min-height: 480px;
 }
 
 .pageHeader {

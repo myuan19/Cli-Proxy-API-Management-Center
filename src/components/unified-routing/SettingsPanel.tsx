@@ -34,7 +34,6 @@ export function SettingsPanel({
   const [hideOriginalModels, setHideOriginalModels] = useState(false);
 
   // Local state for health check config
-  const [defaultCooldown, setDefaultCooldown] = useState(60);
   const [checkInterval, setCheckInterval] = useState(30);
   const [checkTimeout, setCheckTimeout] = useState(10);
   const [maxFailures, setMaxFailures] = useState(3);
@@ -49,7 +48,6 @@ export function SettingsPanel({
 
   useEffect(() => {
     if (healthCheckConfig) {
-      setDefaultCooldown(healthCheckConfig.default_cooldown_seconds);
       setCheckInterval(healthCheckConfig.check_interval_seconds);
       setCheckTimeout(healthCheckConfig.check_timeout_seconds);
       setMaxFailures(healthCheckConfig.max_consecutive_failures);
@@ -62,8 +60,7 @@ export function SettingsPanel({
 
   const hasHealthConfigChanges =
     healthCheckConfig &&
-    (defaultCooldown !== healthCheckConfig.default_cooldown_seconds ||
-      checkInterval !== healthCheckConfig.check_interval_seconds ||
+    (checkInterval !== healthCheckConfig.check_interval_seconds ||
       checkTimeout !== healthCheckConfig.check_timeout_seconds ||
       maxFailures !== healthCheckConfig.max_consecutive_failures);
 
@@ -76,7 +73,6 @@ export function SettingsPanel({
 
   const handleSaveHealthConfig = () => {
     onSaveHealthCheckConfig({
-      default_cooldown_seconds: defaultCooldown,
       check_interval_seconds: checkInterval,
       check_timeout_seconds: checkTimeout,
       max_consecutive_failures: maxFailures,
@@ -128,18 +124,6 @@ export function SettingsPanel({
       {/* Health Check Settings */}
       <Card title={t('unified_routing.health_check_settings')}>
         <div className="settings-form">
-          <div className="form-group">
-            <label className="form-label">{t('unified_routing.default_cooldown_seconds')}</label>
-            <Input
-              type="number"
-              value={defaultCooldown}
-              onChange={(e) => setDefaultCooldown(parseInt(e.target.value) || 60)}
-              min={0}
-              disabled={disabled || saving}
-            />
-            <div className="form-hint">{t('unified_routing.default_cooldown_hint')}</div>
-          </div>
-
           <div className="form-group">
             <label className="form-label">{t('unified_routing.check_interval_seconds')}</label>
             <Input

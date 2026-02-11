@@ -178,20 +178,28 @@ export function RouteCard({
     return null;
   };
 
-  // Format cooldown remaining
-  const formatCooldown = (seconds?: number) => {
-    if (!seconds || seconds <= 0) return '';
-    if (seconds < 60) return `${seconds}s`;
-    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  // Format cooldown: countdown text when seconds > 0; "冷却中" for untimed cooling (no cooldown_ends_at).
+  const formatCooldown = (state: { status?: string; cooldown_remaining_seconds?: number; cooldown_ends_at?: string | null } | null) => {
+    if (!state || state.status !== 'cooling') return null;
+    const sec = state.cooldown_remaining_seconds ?? 0;
+    if (sec > 0) {
+      if (sec < 60) return `${sec}s`;
+      return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+    }
+    // Untimed cooling: no next check time → show "冷却中"
+    if (state.cooldown_ends_at == null || state.cooldown_ends_at === '') return t('unified_routing.cooling');
+    return null; // Timed cooling expired (gap before checking) → caller shows blue dot
   };
 
-  // Get status color class (simplified to only healthy and cooling)
+  // Get status color class
   const getStatusClass = (status?: string) => {
     switch (status) {
       case 'healthy':
         return styles.statusHealthy;
       case 'cooling':
         return styles.statusCooling;
+      case 'checking':
+        return styles.statusChecking;
       default:
         return styles.statusHealthy; // Default to healthy
     }
@@ -334,11 +342,11 @@ export function RouteCard({
                             
                             {/* Target runtime status (always show) */}
                             <span
-                              className={`${styles.targetStatus} ${getStatusClass(state?.status)} ${state?.status === 'cooling' && state?.last_failure_reason ? styles.clickable : ''}`}
-                              title={state?.status === 'cooling' && state?.last_failure_reason ? state.last_failure_reason : undefined}
+                              className={`${styles.targetStatus} ${getStatusClass(state?.status)} ${(state?.status === 'cooling' || state?.status === 'checking') && state?.last_failure_reason ? styles.clickable : ''}`}
+                              title={(state?.status === 'cooling' || state?.status === 'checking') && state?.last_failure_reason ? state.last_failure_reason : undefined}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (state?.status === 'cooling' && state?.last_failure_reason) {
+                                if ((state?.status === 'cooling' || state?.status === 'checking') && state?.last_failure_reason) {
                                   const credInfo = getCredentialInfo(target.credential_id);
                                   setErrorModal({
                                     targetName: `${credInfo?.provider || 'unknown'}/${credInfo?.label || target.credential_id}/${target.model}`,
@@ -347,10 +355,14 @@ export function RouteCard({
                                 }
                               }}
                             >
-                              {state?.status === 'cooling' ? (
-                                <>
-                                  ○ {formatCooldown(state.cooldown_remaining_seconds)}
-                                </>
+                              {state?.status === 'checking' ? (
+                                <>●</>
+                              ) : state?.status === 'cooling' ? (
+                                (() => {
+                                  const text = formatCooldown(state);
+                                  if (text != null) return <>○ {text}</>;
+                                  return <>●</>;
+                                })()
                               ) : (
                                 <>●</>
                               )}

@@ -49,6 +49,7 @@ export interface DetailedRequestsListResponse {
 export interface DetailedRequestLogStatus {
   'detailed-request-log': boolean;
   'detailed-request-log-max-size-mb': number;
+  'detailed-request-log-show-retries'?: boolean;
   size_bytes?: number;
   size_mb?: string;
   record_count?: number;
@@ -71,6 +72,10 @@ export const detailedRequestsApi = {
   /** 开关详细日志 */
   setEnabled: (enabled: boolean): Promise<void> =>
     apiClient.put('/detailed-request-log', { value: enabled }),
+
+  /** 开关「显示重试部分」展示（仅前端展示偏好，与开启详细日志一起持久化） */
+  setShowRetries: (show: boolean): Promise<void> =>
+    apiClient.put('/detailed-request-log', { show_retries: show }),
 
   /** 查询请求记录列表 */
   listRecords: (params: DetailedRequestsQuery = {}): Promise<DetailedRequestsListResponse> =>

@@ -44,6 +44,7 @@ function getStatusBadgeClass(status: string): string {
     case 'healthy':
       return 'badge-success';
     case 'cooling':
+    case 'checking':
       return 'badge-warning';
     case 'unhealthy':
       return 'badge-danger';
@@ -85,7 +86,6 @@ export function PipelineEditor({
     const newLayer: Layer = {
       level: newLevel,
       strategy: 'round-robin',
-      cooldown_seconds: 0,
       targets: [],
     };
     
@@ -244,16 +244,6 @@ export function PipelineEditor({
                         ))}
                       </select>
                     </div>
-                    <div className="setting-item">
-                      <label>{t('unified_routing.cooldown_seconds')}</label>
-                      <input
-                        type="number"
-                        value={layer.cooldown_seconds}
-                        onChange={(e) => handleUpdateLayer(layer.level, { cooldown_seconds: parseInt(e.target.value) || 0 })}
-                        min={0}
-                        disabled={disabled || saving}
-                      />
-                    </div>
                   </div>
                   
                   <div className="targets-container">
@@ -293,8 +283,8 @@ export function PipelineEditor({
                               <div className="target-status">
                                 {targetState && (
                                   <span className={`badge ${getStatusBadgeClass(targetState.status)}`}>
-                                    {targetState.status}
-                                    {targetState.status === 'cooling' && targetState.cooldown_remaining_seconds && (
+                                    {targetState.status === 'checking' ? 'cooling' : targetState.status}
+                                    {targetState.status === 'cooling' && targetState.cooldown_remaining_seconds && targetState.cooldown_remaining_seconds > 0 && (
                                       <> ({targetState.cooldown_remaining_seconds}s)</>
                                     )}
                                   </span>

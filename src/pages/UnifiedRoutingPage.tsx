@@ -381,7 +381,6 @@ export function UnifiedRoutingPage() {
       const newLayer: Layer = {
         level: layerLevel,
         strategy: 'round-robin',
-        cooldown_seconds: 0,
         targets: [target],
       };
       newPipeline = {

@@ -106,7 +106,7 @@ interface UnifiedRoutingState {
   fetchOverview: () => Promise<void>;
   fetchRouteState: (routeId: string) => Promise<void>;
   resetTarget: (targetId: string) => Promise<void>;
-  forceCooldown: (targetId: string, durationSeconds?: number) => Promise<void>;
+  forceCooldown: (targetId: string) => Promise<void>;
   
   // Actions - Health
   triggerHealthCheck: (routeId?: string) => Promise<HealthResult[]>;
@@ -371,9 +371,9 @@ export const useUnifiedRoutingStore = create<UnifiedRoutingState>((set, get) => 
     }
   },
   
-  forceCooldown: async (targetId, durationSeconds) => {
+  forceCooldown: async (targetId) => {
     try {
-      await unifiedRoutingApi.forceCooldown(targetId, durationSeconds);
+      await unifiedRoutingApi.forceCooldown(targetId);
       // Refresh state
       const { selectedRouteId } = get();
       if (selectedRouteId) {
