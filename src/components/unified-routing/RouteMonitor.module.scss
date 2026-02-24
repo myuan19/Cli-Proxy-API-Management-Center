@@ -346,13 +346,6 @@
   min-width: 65px;
 }
 
-.traceId {
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  min-width: 60px;
-}
-
 .tracePath {
   flex: 1;
   color: var(--text-secondary);
@@ -408,6 +401,10 @@
   &.statusFailed {
     background: var(--danger-bg);
     color: var(--danger-text);
+  }
+
+  &.statusSimulated {
+    opacity: 0.5;
   }
 }
 

@@ -412,11 +412,13 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
                           onClick={() => setSelectedTrace(trace)}
                         >
                           <span className={styles.traceTime}>{formatTime(trace.timestamp)}</span>
-                          <span className={styles.traceId}>
-                            trace-{trace.trace_id.slice(0, 2)}
-                          </span>
                           <span className={styles.tracePath}>{buildTracePath(trace)}</span>
-                          <span className={`${styles.traceStatus} ${statusInfo.class}`}>
+                          <span
+                            className={`${styles.traceStatus} ${statusInfo.class} ${trace.is_simulated ? styles.statusSimulated : ''}`}
+                            title={trace.is_simulated
+                              ? t('unified_routing.simulated_request', { defaultValue: '模拟请求' })
+                              : t('unified_routing.normal_request', { defaultValue: '正常请求' })}
+                          >
                             {statusInfo.label}
                           </span>
                           <span className={styles.traceLatency}>
@@ -495,6 +497,14 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
                   {selectedTrace.status === 'success' || selectedTrace.status === 'retry' || selectedTrace.status === 'fallback' 
                     ? t('unified_routing.successful') 
                     : t('unified_routing.failed')}
+                </span>
+              </div>
+              <div className={styles.traceInfoRow}>
+                <span className={styles.traceInfoLabel}>{t('unified_routing.type', { defaultValue: '类型' })}:</span>
+                <span className={styles.traceInfoValue}>
+                  {selectedTrace.is_simulated
+                    ? t('unified_routing.simulated_request', { defaultValue: '模拟请求' })
+                    : t('unified_routing.normal_request', { defaultValue: '正常请求' })}
                 </span>
               </div>
             </div>

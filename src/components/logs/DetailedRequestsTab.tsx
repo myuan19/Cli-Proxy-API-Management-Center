@@ -17,7 +17,7 @@ import type {
 } from '@/services/api/detailedRequests';
 import styles from './DetailedRequestsTab.module.scss';
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 20;
 const AUTO_REFRESH_INTERVAL = 2000;
 
 interface Props {
@@ -480,19 +480,33 @@ function RecordCard({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [retriesBlockOpen, setRetriesBlockOpen] = useState(false);
 
+  const fetchRecordIfNeeded = useCallback(async (): Promise<DetailedRequestRecord | null> => {
+    if (fullRecord) return fullRecord;
+    setLoadingDetail(true);
+    try {
+      const data = await detailedRequestsApi.getRecord(summary.id);
+      setFullRecord(data.record);
+      return data.record;
+    } catch {
+      return null;
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, [fullRecord, summary.id]);
+
   const handleToggleExpand = async () => {
     const willExpand = !expanded;
     setExpanded(willExpand);
     if (willExpand && !fullRecord) {
-      setLoadingDetail(true);
-      try {
-        const data = await detailedRequestsApi.getRecord(summary.id);
-        setFullRecord(data.record);
-      } catch {
-        // keep expanded but empty
-      } finally {
-        setLoadingDetail(false);
-      }
+      await fetchRecordIfNeeded();
+    }
+  };
+
+  const handleDownloadRecord = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const rec = fullRecord || await fetchRecordIfNeeded();
+    if (rec) {
+      downloadText(JSON.stringify(rec, null, 2), `${rec.id}-full.json`, 'application/json');
     }
   };
 
@@ -518,6 +532,16 @@ function RecordCard({
           {summary.status_code}
         </span>
         <span className={styles.headerSpacer} aria-hidden />
+        <span className={styles.blockActions} onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className={styles.blockDlBtn}
+            onClick={handleDownloadRecord}
+            title={t('detailed_requests.download_full', { defaultValue: '下载完整记录' })}
+          >
+            ↓
+          </button>
+        </span>
         <div className={styles.meta}>
           {summary.api_key && <span className={styles.apiKeyTag}>{summary.api_key}</span>}
           <span className={`${styles.metaItem} ${styles.durationText}`}>{summary.total_duration_ms}ms</span>

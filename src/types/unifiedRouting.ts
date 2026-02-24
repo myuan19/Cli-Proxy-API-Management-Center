@@ -118,6 +118,7 @@ export interface RequestTrace {
   status: TraceStatus;
   total_latency_ms: number;
   attempts: AttemptTrace[];
+  is_simulated?: boolean;
 }
 
 export type RoutingEventType =
