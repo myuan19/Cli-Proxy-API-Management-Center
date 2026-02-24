@@ -10,6 +10,8 @@ import {
 import { NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { PageTransition } from '@/components/common/PageTransition';
 import { MainRoutes } from '@/router/MainRoutes';
 import {
@@ -31,10 +33,8 @@ import {
   useNotificationStore,
   useThemeStore,
 } from '@/stores';
-import { versionApi } from '@/services/api';
+import { configApi, versionApi } from '@/services/api';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
-import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
-import { isSupportedLanguage } from '@/utils/language';
 
 const sidebarIcons: Record<string, ReactNode> = {
   dashboard: <IconLayoutDashboard size={18} />,
@@ -182,36 +182,44 @@ const compareVersions = (latest?: string | null, current?: string | null) => {
 };
 
 export function MainLayout() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { showNotification } = useNotificationStore();
   const location = useLocation();
 
   const apiBase = useAuthStore((state) => state.apiBase);
-  const serverVersion = useAuthStore((state) => state.serverVersion);
+  const serverVersion = useAuthStore((state) => state.serverVersion) as string | null;
+  const serverBuildDate = useAuthStore((state) => state.serverBuildDate);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const logout = useAuthStore((state) => state.logout);
 
   const config = useConfigStore((state) => state.config);
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const clearCache = useConfigStore((state) => state.clearCache);
+  const updateConfigValue = useConfigStore((state) => state.updateConfigValue);
 
   const theme = useThemeStore((state) => state.theme);
   const cycleTheme = useThemeStore((state) => state.cycleTheme);
-  const language = useLanguageStore((state) => state.language);
-  const setLanguage = useLanguageStore((state) => state.setLanguage);
+  const toggleLanguage = useLanguageStore((state) => state.toggleLanguage);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [checkingVersion, setCheckingVersion] = useState(false);
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [brandExpanded, setBrandExpanded] = useState(true);
+  const [requestLogModalOpen, setRequestLogModalOpen] = useState(false);
+  const [requestLogDraft, setRequestLogDraft] = useState(false);
+  const [requestLogTouched, setRequestLogTouched] = useState(false);
+  const [requestLogSaving, setRequestLogSaving] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const languageMenuRef = useRef<HTMLDivElement | null>(null);
   const brandCollapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
+  const versionTapCount = useRef(0);
+  const versionTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fullBrandName = 'CLI Proxy API Management Center';
   const abbrBrandName = t('title.abbr');
+  const requestLogEnabled = config?.requestLog ?? false;
+  const requestLogDirty = requestLogDraft !== requestLogEnabled;
+  const canEditRequestLog = connectionStatus === 'connected' && Boolean(config);
   const isLogsPage = location.pathname.startsWith('/logs');
 
   // 将顶栏高度写入 CSS 变量，确保侧栏/内容区计算一致，防止滚动时抖动
@@ -243,7 +251,7 @@ export function MainLayout() {
     };
   }, []);
 
-  // 将主内容区的中心点写入 CSS 变量，供底部浮层（配置面板操作栏、提供商导航）对齐到内容区
+  // 将主内容区的中心点写入 CSS 变量，供底部浮层（如配置面板操作栏）对齐到内容区而非整窗
   useLayoutEffect(() => {
     const updateContentCenter = () => {
       const el = contentRef.current;
@@ -271,7 +279,6 @@ export function MainLayout() {
         resizeObserver.disconnect();
       }
       window.removeEventListener('resize', updateContentCenter);
-      document.documentElement.style.removeProperty('--content-center-x');
     };
   }, []);
 
@@ -289,30 +296,18 @@ export function MainLayout() {
   }, []);
 
   useEffect(() => {
-    if (!languageMenuOpen) {
-      return;
+    if (requestLogModalOpen && !requestLogTouched) {
+      setRequestLogDraft(requestLogEnabled);
     }
+  }, [requestLogModalOpen, requestLogTouched, requestLogEnabled]);
 
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!languageMenuRef.current?.contains(event.target as Node)) {
-        setLanguageMenuOpen(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setLanguageMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape);
-
+  useEffect(() => {
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape);
+      if (versionTapTimer.current) {
+        clearTimeout(versionTapTimer.current);
+      }
     };
-  }, [languageMenuOpen]);
+  }, []);
 
   const handleBrandClick = useCallback(() => {
     if (!brandExpanded) {
@@ -327,20 +322,59 @@ export function MainLayout() {
     }
   }, [brandExpanded]);
 
-  const toggleLanguageMenu = useCallback(() => {
-    setLanguageMenuOpen((prev) => !prev);
+  const openRequestLogModal = useCallback(() => {
+    setRequestLogTouched(false);
+    setRequestLogDraft(requestLogEnabled);
+    setRequestLogModalOpen(true);
+  }, [requestLogEnabled]);
+
+  const handleRequestLogClose = useCallback(() => {
+    setRequestLogModalOpen(false);
+    setRequestLogTouched(false);
   }, []);
 
-  const handleLanguageSelect = useCallback(
-    (nextLanguage: string) => {
-      if (!isSupportedLanguage(nextLanguage)) {
-        return;
+  const handleVersionTap = useCallback(() => {
+    versionTapCount.current += 1;
+    if (versionTapTimer.current) {
+      clearTimeout(versionTapTimer.current);
+    }
+    versionTapTimer.current = setTimeout(() => {
+      versionTapCount.current = 0;
+    }, 1500);
+
+    if (versionTapCount.current >= 7) {
+      versionTapCount.current = 0;
+      if (versionTapTimer.current) {
+        clearTimeout(versionTapTimer.current);
+        versionTapTimer.current = null;
       }
-      setLanguage(nextLanguage);
-      setLanguageMenuOpen(false);
-    },
-    [setLanguage]
-  );
+      openRequestLogModal();
+    }
+  }, [openRequestLogModal]);
+
+  const handleRequestLogSave = async () => {
+    if (!canEditRequestLog) return;
+    if (!requestLogDirty) {
+      setRequestLogModalOpen(false);
+      return;
+    }
+
+    const previous = requestLogEnabled;
+    setRequestLogSaving(true);
+    updateConfigValue('request-log', requestLogDraft);
+
+    try {
+      await configApi.updateRequestLog(requestLogDraft);
+      clearCache('request-log');
+      showNotification(t('notification.request_log_updated'), 'success');
+      setRequestLogModalOpen(false);
+    } catch (error: any) {
+      updateConfigValue('request-log', previous);
+      showNotification(`${t('notification.update_failed')}: ${error?.message || ''}`, 'error');
+    } finally {
+      setRequestLogSaving(false);
+    }
+  };
 
   useEffect(() => {
     fetchConfig().catch(() => {
@@ -452,8 +486,7 @@ export function MainLayout() {
     setCheckingVersion(true);
     try {
       const data = await versionApi.checkLatest();
-      const latestRaw = data?.['latest-version'] ?? data?.latest_version ?? data?.latest ?? '';
-      const latest = typeof latestRaw === 'string' ? latestRaw : String(latestRaw ?? '');
+      const latest = String(data?.['latest-version'] ?? data?.latest_version ?? data?.latest ?? '');
       const comparison = compareVersions(latest, serverVersion);
 
       if (!latest) {
@@ -471,11 +504,8 @@ export function MainLayout() {
       } else {
         showNotification(t('system_info.version_is_latest'), 'success');
       }
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-      const suffix = message ? `: ${message}` : '';
-      showNotification(`${t('system_info.version_check_error')}${suffix}`, 'error');
+    } catch (error: any) {
+      showNotification(`${t('system_info.version_check_error')}: ${error?.message || ''}`, 'error');
     } finally {
       setCheckingVersion(false);
     }
@@ -547,36 +577,9 @@ export function MainLayout() {
             >
               {headerIcons.update}
             </Button>
-            <div className={`language-menu ${languageMenuOpen ? 'open' : ''}`} ref={languageMenuRef}>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleLanguageMenu}
-                title={t('language.switch')}
-                aria-label={t('language.switch')}
-                aria-haspopup="menu"
-                aria-expanded={languageMenuOpen}
-              >
-                {headerIcons.language}
-              </Button>
-              {languageMenuOpen && (
-                <div className="notification entering language-menu-popover" role="menu" aria-label={t('language.switch')}>
-                  {LANGUAGE_ORDER.map((lang) => (
-                    <button
-                      key={lang}
-                      type="button"
-                      className={`language-menu-option ${language === lang ? 'active' : ''}`}
-                      onClick={() => handleLanguageSelect(lang)}
-                      role="menuitemradio"
-                      aria-checked={language === lang}
-                    >
-                      <span>{t(LANGUAGE_LABEL_KEYS[lang])}</span>
-                      {language === lang ? <span className="language-menu-check">✓</span> : null}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <Button variant="ghost" size="sm" onClick={toggleLanguage} title={t('language.switch')}>
+              {headerIcons.language}
+            </Button>
             <Button variant="ghost" size="sm" onClick={cycleTheme} title={t('theme.switch')}>
               {theme === 'auto'
                 ? headerIcons.autoTheme
@@ -620,8 +623,57 @@ export function MainLayout() {
               scrollContainerRef={contentRef}
             />
           </main>
+
+          <footer className="footer">
+            <span>
+              {t('footer.api_version')}: {serverVersion || t('system_info.version_unknown')}
+            </span>
+            <span className="footer-version" onClick={handleVersionTap}>
+              {t('footer.version')}: {__APP_VERSION__ || t('system_info.version_unknown')}
+            </span>
+            <span>
+              {t('footer.build_date')}:{' '}
+              {serverBuildDate
+                ? new Date(serverBuildDate).toLocaleString(i18n.language)
+                : t('system_info.version_unknown')}
+            </span>
+          </footer>
         </div>
       </div>
+
+      <Modal
+        open={requestLogModalOpen}
+        onClose={handleRequestLogClose}
+        title={t('basic_settings.request_log_title')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={handleRequestLogClose} disabled={requestLogSaving}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={handleRequestLogSave}
+              loading={requestLogSaving}
+              disabled={!canEditRequestLog || !requestLogDirty}
+            >
+              {t('common.save')}
+            </Button>
+          </>
+        }
+      >
+        <div className="request-log-modal">
+          <div className="status-badge warning">{t('basic_settings.request_log_warning')}</div>
+          <ToggleSwitch
+            label={t('basic_settings.request_log_enable')}
+            labelPosition="left"
+            checked={requestLogDraft}
+            disabled={!canEditRequestLog || requestLogSaving}
+            onChange={(value) => {
+              setRequestLogDraft(value);
+              setRequestLogTouched(true);
+            }}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

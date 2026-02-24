@@ -35,6 +35,7 @@ export interface DetailedRequestRecord {
   attempts?: DetailedAttempt[];
   total_duration_ms: number;
   is_streaming: boolean;
+  is_simulated?: boolean;
   error?: string;
 }
 
@@ -49,6 +50,7 @@ export interface DetailedRequestSummary {
   model?: string;
   total_duration_ms: number;
   is_streaming: boolean;
+  is_simulated?: boolean;
   error?: string;
   attempt_count: number;
 }
@@ -65,6 +67,7 @@ export interface DetailedRequestLogStatus {
   'detailed-request-log': boolean;
   'detailed-request-log-max-size-mb': number;
   'detailed-request-log-show-retries'?: boolean;
+  'detailed-request-log-show-simulated'?: boolean;
   size_bytes?: number;
   size_mb?: string;
   record_count?: number;
@@ -77,6 +80,7 @@ export interface DetailedRequestsQuery {
   offset?: number;
   after?: number;
   before?: number;
+  include_simulated?: boolean;
 }
 
 export const detailedRequestsApi = {
@@ -91,6 +95,10 @@ export const detailedRequestsApi = {
   /** 开关「显示重试部分」展示（仅前端展示偏好，与开启详细日志一起持久化） */
   setShowRetries: (show: boolean): Promise<void> =>
     apiClient.put('/detailed-request-log', { show_retries: show }),
+
+  /** 开关「显示模拟路由」展示 */
+  setShowSimulated: (show: boolean): Promise<void> =>
+    apiClient.put('/detailed-request-log', { show_simulated: show }),
 
   /** 查询请求记录列表 */
   listRecords: (params: DetailedRequestsQuery = {}): Promise<DetailedRequestsListResponse> =>

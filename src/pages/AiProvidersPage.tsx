@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/Button';
 import { useNavigate } from 'react-router-dom';
 import {
   AmpcodeSection,
@@ -16,7 +15,6 @@ import {
   withDisableAllModelsRule,
   withoutDisableAllModelsRule,
 } from '@/components/providers/utils';
-import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { ampcodeApi, providersApi } from '@/services/api';
 import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
 import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
@@ -57,13 +55,10 @@ export function AiProvidersPage() {
 
   const [configSwitchingKey, setConfigSwitchingKey] = useState<string | null>(null);
 
-  // Health check state
-  const [healthChecking, setHealthChecking] = useState(false);
-
   const disableControls = connectionStatus !== 'connected';
   const isSwitching = Boolean(configSwitchingKey);
 
-  const { keyStats, usageDetails, loadKeyStats, refreshKeyStats } = useProviderStats();
+  const { keyStats, usageDetails, loadKeyStats } = useProviderStats();
 
   const getErrorMessage = (err: unknown) => {
     if (err instanceof Error) return err.message;
@@ -117,7 +112,7 @@ export function AiProvidersPage() {
     if (hasMounted.current) return;
     hasMounted.current = true;
     loadConfigs();
-    void loadKeyStats().catch(() => {});
+    loadKeyStats();
   }, [loadConfigs, loadKeyStats]);
 
   useEffect(() => {
@@ -133,8 +128,6 @@ export function AiProvidersPage() {
     config?.vertexApiKeys,
     config?.openaiCompatibility,
   ]);
-
-  useHeaderRefresh(refreshKeyStats);
 
   const openEditor = useCallback(
     (path: string) => {
@@ -341,95 +334,10 @@ export function AiProvidersPage() {
     });
   };
 
-  // Health check handler（流式：检查完成一个返回一个，超过 30s 的显示为超时）
-  const handleHealthCheck = async (type?: string) => {
-    setHealthChecking(true);
-    const results: Array<{ status: 'healthy' | 'unhealthy' | 'timeout' }> = [];
-
-    try {
-      await providersApi.checkProvidersHealthStream(
-        { type, timeout: 10 },
-        {
-          onResult: (item) => {
-            results.push({ status: item.status });
-          },
-          onDone: () => {
-            const healthy_count = results.filter((r) => r.status === 'healthy').length;
-            const unhealthy_count = results.filter((r) => r.status === 'unhealthy').length;
-            const timeout_count = results.filter((r) => r.status === 'timeout').length;
-
-            if (results.length === 0) {
-              showNotification(t('ai_providers.health_check_failed'), 'info');
-              return;
-            }
-            if (unhealthy_count === 0 && timeout_count === 0 && healthy_count > 0) {
-              showNotification(
-                t('ai_providers.health_check_all_healthy', { count: healthy_count }),
-                'success'
-              );
-            } else if (healthy_count === 0 && unhealthy_count === 0 && timeout_count > 0) {
-              showNotification(
-                t('ai_providers.health_check_result_with_timeout', {
-                  healthy: 0,
-                  unhealthy: 0,
-                  timeout: timeout_count,
-                }),
-                'warning'
-              );
-            } else if (timeout_count > 0) {
-              showNotification(
-                t('ai_providers.health_check_result_with_timeout', {
-                  healthy: healthy_count,
-                  unhealthy: unhealthy_count,
-                  timeout: timeout_count,
-                }),
-                'info'
-              );
-            } else if (unhealthy_count === 0 && healthy_count > 0) {
-              showNotification(
-                t('ai_providers.health_check_all_healthy', { count: healthy_count }),
-                'success'
-              );
-            } else if (healthy_count === 0 && unhealthy_count > 0) {
-              showNotification(
-                t('ai_providers.health_check_all_unhealthy', { count: unhealthy_count }),
-                'error'
-              );
-            } else {
-              showNotification(
-                t('ai_providers.health_check_result', {
-                  healthy: healthy_count,
-                  unhealthy: unhealthy_count,
-                }),
-                'info'
-              );
-            }
-          },
-        }
-      );
-    } catch (err) {
-      const errorMessage = getErrorMessage(err);
-      showNotification(
-        `${t('ai_providers.health_check_failed')}: ${errorMessage}`,
-        'error'
-      );
-    } finally {
-      setHealthChecking(false);
-    }
-  };
   return (
     <div className={styles.container}>
       <div className={styles.pageHeader}>
         <h1 className={styles.pageTitle}>{t('ai_providers.title')}</h1>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void handleHealthCheck()}
-          loading={healthChecking}
-          disabled={disableControls || loading || healthChecking}
-        >
-          {healthChecking ? t('ai_providers.health_checking') : t('ai_providers.health_check_all')}
-        </Button>
       </div>
       <div className={styles.content}>
         {error && <div className="error-box">{error}</div>}

@@ -76,6 +76,59 @@ function toLocalISO(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+function isSSEBody(body: string): boolean {
+  if (!body) return false;
+  return body.trimStart().startsWith('data:') || /^event:\s/m.test(body);
+}
+
+function parseSSEAssembled(raw: string): string {
+  const lines = raw.split('\n');
+  const textParts: string[] = [];
+  for (const line of lines) {
+    if (!line.startsWith('data:')) continue;
+    const data = line.slice(5).trim();
+    if (data === '[DONE]' || !data) continue;
+    try {
+      const obj = JSON.parse(data);
+      // OpenAI Chat Completions streaming
+      if (obj.choices) {
+        for (const c of obj.choices) {
+          if (c.delta?.content) textParts.push(c.delta.content);
+          if (c.delta?.reasoning_content) textParts.push(c.delta.reasoning_content);
+          if (c.text) textParts.push(c.text);
+        }
+      }
+      // OpenAI Responses API streaming
+      if (obj.type === 'response.output_text.delta' && typeof obj.delta === 'string') {
+        textParts.push(obj.delta);
+      }
+      if (obj.type === 'response.reasoning.delta' && typeof obj.delta === 'string') {
+        textParts.push(obj.delta);
+      }
+      // Anthropic streaming
+      if (obj.type === 'content_block_delta' && obj.delta?.text) {
+        textParts.push(obj.delta.text);
+      }
+      if (obj.type === 'content_block_delta' && obj.delta?.thinking) {
+        textParts.push(obj.delta.thinking);
+      }
+    } catch {
+      textParts.push(data);
+    }
+  }
+  return textParts.join('');
+}
+
+function downloadText(content: string, filename: string, mimeType = 'text/plain') {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /* ------------------------------------------------------------------ */
 /* Sub-components                                                      */
 /* ------------------------------------------------------------------ */
@@ -118,19 +171,45 @@ function DataBlock({
   body,
   titleClass,
   defaultOpen = false,
+  downloadPrefix,
 }: {
   title: string;
   headers?: Record<string, string[]>;
   body?: string;
   titleClass?: string;
   defaultOpen?: boolean;
+  downloadPrefix?: string;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(defaultOpen);
+  const [showAssembled, setShowAssembled] = useState(false);
   const hasHeaders = headers && Object.keys(headers).length > 0;
   const hasBody = body && body !== '{}' && body !== '""';
   if (!hasHeaders && !hasBody) return null;
 
   const formattedBody = hasBody ? formatJson(body!) : '';
+  const sse = hasBody && isSSEBody(body!);
+  const assembled = sse ? parseSSEAssembled(body!) : '';
+  const prefix = downloadPrefix || 'body';
+
+  const handleDownloadBody = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasBody) return;
+    const isJson = body!.trimStart().startsWith('{') || body!.trimStart().startsWith('[');
+    downloadText(formattedBody, `${prefix}.${isJson ? 'json' : 'txt'}`, isJson ? 'application/json' : 'text/plain');
+  };
+
+  const handleDownloadSSE = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasBody) return;
+    downloadText(body!, `${prefix}-sse.txt`);
+  };
+
+  const handleDownloadAssembled = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!assembled) return;
+    downloadText(assembled, `${prefix}-content.txt`);
+  };
 
   return (
     <div className={styles.block}>
@@ -140,10 +219,65 @@ function DataBlock({
       >
         <span className={`${styles.blockArrow} ${open ? styles.blockArrowOpen : ''}`}>&#9654;</span>
         {title}
+        {hasBody && (
+          <span className={styles.blockActions} onClick={(e) => e.stopPropagation()}>
+            {sse ? (
+              <>
+                <button
+                  type="button"
+                  className={styles.blockDlBtn}
+                  onClick={handleDownloadSSE}
+                  title={t('detailed_requests.download_sse', { defaultValue: '下载 SSE 原文' })}
+                >
+                  ↓SSE
+                </button>
+                <button
+                  type="button"
+                  className={styles.blockDlBtn}
+                  onClick={handleDownloadAssembled}
+                  title={t('detailed_requests.download_content', { defaultValue: '下载实际内容' })}
+                >
+                  ↓{t('detailed_requests.content_label', { defaultValue: '内容' })}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className={styles.blockDlBtn}
+                onClick={handleDownloadBody}
+                title={t('detailed_requests.download_body', { defaultValue: '下载 Body' })}
+              >
+                ↓
+              </button>
+            )}
+          </span>
+        )}
       </div>
       <div className={`${styles.blockContent} ${open ? styles.blockContentOpen : ''}`}>
         {hasHeaders && <HeadersView headers={headers!} />}
-        {hasBody && <div className={styles.bodyContent}>{formattedBody}</div>}
+        {sse && open && (
+          <div className={styles.sseToggleBar}>
+            <button
+              type="button"
+              className={`${styles.sseTabBtn} ${!showAssembled ? styles.sseTabActive : ''}`}
+              onClick={() => setShowAssembled(false)}
+            >
+              SSE
+            </button>
+            <button
+              type="button"
+              className={`${styles.sseTabBtn} ${showAssembled ? styles.sseTabActive : ''}`}
+              onClick={() => setShowAssembled(true)}
+            >
+              {t('detailed_requests.assembled_content', { defaultValue: '实际内容' })}
+            </button>
+          </div>
+        )}
+        {hasBody && (
+          <div className={styles.bodyContent}>
+            {sse && showAssembled ? (assembled || '(empty)') : formattedBody}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -163,13 +297,21 @@ function summarizeAuth(auth: string): string {
   return pieces.length > 0 ? pieces.join(' · ') : auth;
 }
 
-/** 单次尝试的请求部分：展示转换后的上游请求（URL、Auth、Headers、Body） */
-function AttemptRequestBlock({ attempt }: { attempt: DetailedAttempt }) {
+function AttemptRequestBlock({ attempt, attemptIndex }: { attempt: DetailedAttempt; attemptIndex: number }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const hasHeaders = attempt.request_headers && Object.keys(attempt.request_headers).length > 0;
   const hasBody = attempt.request_body && attempt.request_body !== '{}' && attempt.request_body !== '""' && attempt.request_body !== '<empty>';
   if (!hasHeaders && !hasBody && !attempt.upstream_url) return null;
+
+  const formattedBody = hasBody ? formatJson(attempt.request_body!) : '';
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasBody) return;
+    const isJson = attempt.request_body!.trimStart().startsWith('{') || attempt.request_body!.trimStart().startsWith('[');
+    downloadText(formattedBody, `attempt-${attemptIndex}-request.${isJson ? 'json' : 'txt'}`, isJson ? 'application/json' : 'text/plain');
+  };
 
   return (
     <div className={styles.retryItemBlock}>
@@ -186,10 +328,17 @@ function AttemptRequestBlock({ attempt }: { attempt: DetailedAttempt }) {
         {attempt.auth && (
           <span className={styles.apiKeyTag} title={attempt.auth}>{summarizeAuth(attempt.auth)}</span>
         )}
+        {hasBody && (
+          <span className={styles.blockActions} onClick={(e) => e.stopPropagation()}>
+            <button type="button" className={styles.blockDlBtn} onClick={handleDownload} title={t('detailed_requests.download_body', { defaultValue: '下载 Body' })}>
+              ↓
+            </button>
+          </span>
+        )}
       </div>
       <div className={`${styles.blockContent} ${open ? styles.blockContentOpen : ''}`}>
         {hasHeaders && <HeadersView headers={attempt.request_headers!} />}
-        {hasBody && <div className={styles.bodyContent}>{formatJson(attempt.request_body!)}</div>}
+        {hasBody && <div className={styles.bodyContent}>{formattedBody}</div>}
       </div>
     </div>
   );
@@ -204,7 +353,6 @@ function inlineStatusClass(code: number): string {
   return styles.status0;
 }
 
-/** 单次尝试的响应部分 */
 function AttemptResponseBlock({
   attempt,
   attemptIndex,
@@ -218,6 +366,19 @@ function AttemptResponseBlock({
   const body = attempt.response_body;
   const hasBody = body && body !== '{}' && body !== '""' && body !== '<empty>';
   const displayIndex = attempt.index ?? attemptIndex;
+  const sse = hasBody && isSSEBody(body!);
+  const formattedBody = hasBody ? formatJson(body!) : '';
+
+  const handleDownloadBody = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasBody) return;
+    if (sse) {
+      downloadText(body!, `attempt-${displayIndex}-response-sse.txt`);
+    } else {
+      const isJson = body!.trimStart().startsWith('{') || body!.trimStart().startsWith('[');
+      downloadText(formattedBody, `attempt-${displayIndex}-response.${isJson ? 'json' : 'txt'}`, isJson ? 'application/json' : 'text/plain');
+    }
+  };
 
   return (
     <div className={styles.retryItemBlock}>
@@ -235,10 +396,19 @@ function AttemptResponseBlock({
         {attempt.error && !attempt.status_code && (
           <span style={{ color: 'var(--error-color)', fontSize: 11 }}>Error</span>
         )}
+        {hasBody && (
+          <span className={styles.blockActions} onClick={(e) => e.stopPropagation()}>
+            <button type="button" className={styles.blockDlBtn} onClick={handleDownloadBody} title={sse ? t('detailed_requests.download_sse', { defaultValue: '下载 SSE 原文' }) : t('detailed_requests.download_body', { defaultValue: '下载 Body' })}>
+              {sse ? '↓SSE' : '↓'}
+            </button>
+          </span>
+        )}
       </div>
       <div className={`${styles.blockContent} ${open ? styles.blockContentOpen : ''}`}>
         <HeadersView headers={headers || {}} />
-        {hasBody && <div className={styles.bodyContent}>{formatJson(body!)}</div>}
+        {hasBody && (
+          <div className={styles.bodyContent}>{formattedBody}</div>
+        )}
         {attempt.error && (
           <div className={styles.attemptError}>Error: {attempt.error}</div>
         )}
@@ -276,7 +446,7 @@ function ProcessingDetailsList({ attempts }: { attempts: DetailedAttempt[] }) {
             key={`attempt-${displayIndex}-${i}`}
             className={`${styles.attemptGroup} ${isNewGroup ? styles.attemptGroupNew : ''}`}
           >
-            {showRequest && <AttemptRequestBlock attempt={attempt} />}
+            {showRequest && <AttemptRequestBlock attempt={attempt} attemptIndex={displayIndex} />}
             <AttemptResponseBlock attempt={attempt} attemptIndex={displayIndex} />
           </div>
         );
@@ -288,12 +458,10 @@ function ProcessingDetailsList({ attempts }: { attempts: DetailedAttempt[] }) {
 function RecordCard({
   summary,
   onCopyCurl,
-  onDownload,
   showRetriesBlock,
 }: {
   summary: DetailedRequestSummary;
   onCopyCurl: (id: string) => void;
-  onDownload: (record: DetailedRequestRecord) => void;
   showRetriesBlock: boolean;
 }) {
   const { t } = useTranslation();
@@ -330,6 +498,9 @@ function RecordCard({
     <div className={styles.card}>
       <div className={styles.cardHeader} onClick={handleToggleExpand}>
         <span className={`${styles.expandIcon} ${expanded ? styles.expandIconOpen : ''}`}>&#9654;</span>
+        {summary.is_simulated && (
+          <span className={styles.simulatedBadge}>{t('detailed_requests.simulated_tag', { defaultValue: '模拟' })}</span>
+        )}
         <span className={styles.methodBadge}>{summary.method}</span>
         <span className={styles.pathText}>{summary.url}</span>
         {summary.model && <span className={styles.modelBadge}>{summary.model}</span>}
@@ -358,9 +529,6 @@ function RecordCard({
               <Button size="sm" onClick={() => onCopyCurl(record.id)}>
                 {t('detailed_requests.copy_curl')}
               </Button>
-              <Button size="sm" variant="secondary" onClick={() => onDownload(record)}>
-                {t('detailed_requests.download', { defaultValue: '下载' })}
-              </Button>
               <span className={styles.fullTimestamp}>{fmtDate(record.timestamp)}</span>
               {record.is_streaming && <span className={styles.streamBadge}>Streaming</span>}
             </div>
@@ -369,6 +537,7 @@ function RecordCard({
               title={t('detailed_requests.client_request')}
               headers={record.request_headers}
               body={record.request_body}
+              downloadPrefix={`${record.id}-client-request`}
             />
 
             {showRetriesBlock && attempts.length > 0 && (
@@ -404,6 +573,7 @@ function RecordCard({
                     : undefined
               }
               defaultOpen={false}
+              downloadPrefix={`${record.id}-response`}
             />
 
             {record.error && (
@@ -412,6 +582,7 @@ function RecordCard({
                 body={record.error}
                 titleClass={styles.blockTitleError}
                 defaultOpen
+                downloadPrefix={`${record.id}-error`}
               />
             )}
           </>
@@ -451,6 +622,7 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
   // Auto-refresh；显示重试部分默认 false，实际以 loadStatus 拉取的后端状态为准
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showRetriesBlock, setShowRetriesBlock] = useState(false);
+  const [showSimulated, setShowSimulated] = useState(false);
   const autoRefreshRef = useRef(true);
   const isFirstLoad = useRef(true);
   const lastIds = useRef('');
@@ -468,6 +640,9 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
       setLogEnabled(data['detailed-request-log']);
       if (data['detailed-request-log-show-retries'] !== undefined) {
         setShowRetriesBlock(data['detailed-request-log-show-retries']);
+      }
+      if (data['detailed-request-log-show-simulated'] !== undefined) {
+        setShowSimulated(data['detailed-request-log-show-simulated']);
       }
       setRecordCount(data.record_count);
       setSizeMb(data.size_mb);
@@ -487,6 +662,7 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
     };
     if (apiKeyFilter) params.api_key = apiKeyFilter;
     if (statusFilter) params.status_code = statusFilter;
+    if (showSimulated) params.include_simulated = true;
 
     // Rolling time window for presets
     if (timePreset > 0) {
@@ -519,7 +695,7 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
     }
 
     loadStatus();
-  }, [apiKeyFilter, statusFilter, timePreset, timeAfter, timeBefore, loadStatus]);
+  }, [apiKeyFilter, statusFilter, timePreset, timeAfter, timeBefore, showSimulated, loadStatus]);
 
   /* ---- Effects ---- */
 
@@ -573,6 +749,18 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
     }
   };
 
+  const handleToggleShowSimulated = async (show: boolean) => {
+    const prev = showSimulated;
+    setShowSimulated(show);
+    lastIds.current = '';
+    try {
+      await detailedRequestsApi.setShowSimulated(show);
+    } catch {
+      setShowSimulated(prev);
+      showNotification(t('detailed_requests.toggle_failed'), 'error');
+    }
+  };
+
   const handleDeleteAll = () => {
     showConfirmation({
       title: t('detailed_requests.delete_all'),
@@ -604,18 +792,6 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
     } catch {
       showNotification(t('detailed_requests.curl_copy_failed'), 'error');
     }
-  };
-
-  const handleDownload = (record: DetailedRequestRecord) => {
-    const json = JSON.stringify(record, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const ts = record.timestamp ? new Date(record.timestamp).toISOString().replace(/[:.]/g, '-') : record.id;
-    a.download = `detail-${ts}-${record.id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleStatusFilter = (status: string) => {
@@ -690,6 +866,14 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
           <ToggleSwitch
             checked={showRetriesBlock}
             onChange={handleToggleShowRetries}
+            disabled={disabled}
+          />
+        </div>
+        <div className={styles.toggleGroup}>
+          <span className={styles.toggleLabel}>{t('detailed_requests.show_simulated', { defaultValue: '显示模拟路由' })}</span>
+          <ToggleSwitch
+            checked={showSimulated}
+            onChange={handleToggleShowSimulated}
             disabled={disabled}
           />
         </div>
@@ -791,7 +975,6 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
               key={r.id}
               summary={r}
               onCopyCurl={handleCopyCurl}
-              onDownload={handleDownload}
               showRetriesBlock={showRetriesBlock}
             />
           ))

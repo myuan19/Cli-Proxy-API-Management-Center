@@ -234,6 +234,18 @@
   transform: rotate(90deg);
 }
 
+.simulatedBadge {
+  font-weight: 700;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: $radius-sm;
+  background: rgba(168, 85, 247, 0.12);
+  color: #a855f7;
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
 .methodBadge {
   font-weight: 700;
   font-size: 12px;
@@ -677,4 +689,58 @@
   text-align: center;
   padding: 40px;
   color: var(--text-secondary);
+}
+
+/* Block-level download buttons */
+.blockActions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.blockDlBtn {
+  all: unset;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: $radius-sm;
+  color: var(--text-secondary);
+  background: rgba(107, 114, 128, 0.08);
+  white-space: nowrap;
+
+  &:hover {
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--primary-color);
+  }
+}
+
+/* SSE tab toggle bar */
+.sseToggleBar {
+  display: flex;
+  gap: 0;
+  padding: 6px 14px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.sseTabBtn {
+  all: unset;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 5px 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  transition: color 0.15s, border-color 0.15s;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.sseTabActive {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  font-weight: 600;
 }

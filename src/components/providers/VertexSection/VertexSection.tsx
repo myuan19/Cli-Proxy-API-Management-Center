@@ -19,9 +19,8 @@ import { ProviderList } from '../ProviderList';
 import { ProviderStatusBar } from '../ProviderStatusBar';
 import { getStatsBySource } from '../utils';
 
-// 健康检查结果类型
 interface ModelHealthResult {
-  status: 'healthy' | 'unhealthy';
+  status: 'healthy' | 'unhealthy' | 'timeout' | 'checking';
   message?: string;
   latency_ms?: number;
 }
@@ -53,133 +52,57 @@ export function VertexSection({
   const { showNotification } = useNotificationStore();
   const actionsDisabled = disableControls || loading || isSwitching;
 
-  // 健康检查状态: apiKey -> modelName -> result
-  const [healthResults, setHealthResults] = useState<Record<string, Record<string, ModelHealthResult>>>({});
-  // 正在检查的模型: "apiKey:modelName"
-  const [checkingModel, setCheckingModel] = useState<string | null>(null);
-  // 正在检查的 Provider (用 apiKey 标识)
-  const [checkingProvider, setCheckingProvider] = useState<string | null>(null);
+  const [healthResults, setHealthResults] = useState<Record<string, ModelHealthResult>>({});
+  const [checkingAll, setCheckingAll] = useState(false);
 
-  // 单个模型健康检查
-  const handleModelHealthCheck = async (apiKey: string, prefix: string | undefined, modelName: string, event: React.MouseEvent) => {
-    event.stopPropagation();
+  const handleCheckAll = async () => {
+    if (checkingAll) return;
+    setCheckingAll(true);
+    setHealthResults({});
 
-    const checkKey = `${apiKey}:${modelName}`;
-    if (checkingModel) return;
-
-    setCheckingModel(checkKey);
+    let healthy = 0;
+    let unhealthy = 0;
 
     try {
-      // 使用 prefix 或 API Key 前缀作为标识符
-      const providerName = prefix || apiKey.substring(0, 20);
-      const result = await providersApi.checkProvidersHealth({
-        type: 'vertex-api-key',
-        name: providerName,
-        model: modelName,
-        timeout: 10,
-      });
-
-      if (result.providers.length > 0) {
-        const providerResult = result.providers[0];
-        setHealthResults((prev) => ({
-          ...prev,
-          [apiKey]: {
-            ...prev[apiKey],
-            [modelName]: {
-              status: providerResult.status,
-              message: providerResult.message,
-              latency_ms: providerResult.latency_ms,
-            },
+      await providersApi.checkProvidersHealthStream(
+        { type: 'vertex-api-key', timeout: 30 },
+        {
+          onResult: (item) => {
+            const key = `${item.prefix || item.name}::${item.model_tested || ''}`;
+            if (item.status === 'healthy') healthy++;
+            else unhealthy++;
+            setHealthResults((prev) => ({
+              ...prev,
+              [key]: {
+                status: item.status === 'healthy' ? 'healthy' : item.status === 'timeout' ? 'timeout' : 'unhealthy',
+                message: item.message,
+                latency_ms: item.latency_ms,
+              },
+            }));
           },
-        }));
-
-        if (providerResult.status === 'healthy') {
-          showNotification(
-            `${modelName}: ${t('ai_providers.health_status_healthy', { defaultValue: '健康' })}${providerResult.latency_ms ? ` (${providerResult.latency_ms}ms)` : ''}`,
-            'success'
-          );
-        } else {
-          showNotification(
-            `${modelName}: ${t('ai_providers.health_status_unhealthy', { defaultValue: '异常' })} - ${providerResult.message || ''}`,
-            'error'
-          );
+          onDone: () => {
+            setCheckingAll(false);
+            const total = healthy + unhealthy;
+            if (total === 0) return;
+            if (unhealthy === 0) {
+              showNotification(
+                t('ai_providers.health_check_all_healthy', { count: total, defaultValue: `全部 ${total} 个模型健康` }),
+                'success'
+              );
+            } else if (healthy === 0) {
+              showNotification(
+                t('ai_providers.health_check_all_unhealthy', { count: total, defaultValue: `全部 ${total} 个模型异常` }),
+                'error'
+              );
+            } else {
+              showNotification(
+                t('ai_providers.health_check_result', { healthy, unhealthy, defaultValue: `${healthy} 个健康，${unhealthy} 个异常` }),
+                'warning'
+              );
+            }
+          },
         }
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      showNotification(
-        `${modelName}: ${t('ai_providers.health_check_failed', { defaultValue: '健康检查失败' })} - ${errorMessage}`,
-        'error'
       );
-    } finally {
-      setCheckingModel(null);
-    }
-  };
-
-  // Provider 级别的健康检查（检查所有模型）
-  const handleProviderHealthCheck = async (config: ProviderKeyConfig, event: React.MouseEvent) => {
-    event.stopPropagation();
-
-    if (checkingProvider || checkingModel) return;
-    if (!config.models?.length) {
-      showNotification(t('ai_providers.health_check_no_models', { defaultValue: '该提供商没有配置模型' }), 'warning');
-      return;
-    }
-
-    setCheckingProvider(config.apiKey);
-
-    try {
-      // 使用 prefix 或 API Key 前缀作为标识符
-      const providerName = config.prefix || config.apiKey.substring(0, 20);
-      const modelNames = config.models.map(m => m.name).join(',');
-      const result = await providersApi.checkProvidersHealth({
-        type: 'vertex-api-key',
-        name: providerName,
-        models: modelNames,
-        timeout: 30,
-      });
-
-      // 更新所有模型的健康检查结果
-      const newResults: Record<string, ModelHealthResult> = {};
-      result.providers.forEach((providerResult) => {
-        if (providerResult.model_tested) {
-          newResults[providerResult.model_tested] = {
-            status: providerResult.status,
-            message: providerResult.message,
-            latency_ms: providerResult.latency_ms,
-          };
-        }
-      });
-
-      setHealthResults((prev) => ({
-        ...prev,
-        [config.apiKey]: {
-          ...prev[config.apiKey],
-          ...newResults,
-        },
-      }));
-
-      // 显示汇总通知
-      if (result.healthy_count === result.total_count) {
-        showNotification(
-          t('ai_providers.health_check_all_healthy', { count: result.total_count, defaultValue: `所有 ${result.total_count} 个模型健康` }),
-          'success'
-        );
-      } else if (result.unhealthy_count === result.total_count) {
-        showNotification(
-          t('ai_providers.health_check_all_unhealthy', { count: result.total_count, defaultValue: `所有 ${result.total_count} 个模型异常` }),
-          'error'
-        );
-      } else {
-        showNotification(
-          t('ai_providers.health_check_result', {
-            healthy: result.healthy_count,
-            unhealthy: result.unhealthy_count,
-            defaultValue: `健康检查完成：${result.healthy_count} 个健康，${result.unhealthy_count} 个异常`,
-          }),
-          'warning'
-        );
-      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       showNotification(
@@ -187,27 +110,27 @@ export function VertexSection({
         'error'
       );
     } finally {
-      setCheckingProvider(null);
+      setCheckingAll(false);
     }
   };
 
   const statusBarCache = useMemo(() => {
     const cache = new Map<string, ReturnType<typeof calculateStatusBarData>>();
-
     configs.forEach((config) => {
       if (!config.apiKey) return;
-      const candidates = buildCandidateUsageSourceIds({
-        apiKey: config.apiKey,
-        prefix: config.prefix,
-      });
+      const candidates = buildCandidateUsageSourceIds({ apiKey: config.apiKey, prefix: config.prefix });
       if (!candidates.length) return;
       const candidateSet = new Set(candidates);
       const filteredDetails = usageDetails.filter((detail) => candidateSet.has(detail.source));
       cache.set(config.apiKey, calculateStatusBarData(filteredDetails));
     });
-
     return cache;
   }, [configs, usageDetails]);
+
+  const getModelResult = (cfg: ProviderKeyConfig, modelName: string): ModelHealthResult | undefined => {
+    const key = `${cfg.prefix || 'vertex'}::${modelName}`;
+    return healthResults[key];
+  };
 
   return (
     <>
@@ -219,9 +142,19 @@ export function VertexSection({
           </span>
         }
         extra={
-          <Button size="sm" onClick={onAdd} disabled={actionsDisabled}>
-            {t('ai_providers.vertex_add_button')}
-          </Button>
+          <div className={styles.cardHeaderActions}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void handleCheckAll()}
+              disabled={actionsDisabled || checkingAll || configs.length === 0}
+            >
+              {checkingAll ? <LoadingSpinner size={14} /> : t('ai_providers.health_check_all', { defaultValue: '全部检查' })}
+            </Button>
+            <Button size="sm" onClick={onAdd} disabled={actionsDisabled}>
+              {t('ai_providers.vertex_add_button')}
+            </Button>
+          </div>
         }
       >
         <ProviderList<ProviderKeyConfig>
@@ -233,21 +166,6 @@ export function VertexSection({
           onEdit={onEdit}
           onDelete={onDelete}
           actionsDisabled={actionsDisabled}
-          renderExtraActions={(item) => (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => void handleProviderHealthCheck(item, e)}
-              disabled={checkingProvider !== null || checkingModel !== null}
-              className={styles.providerHealthCheckButton}
-            >
-              {checkingProvider === item.apiKey ? (
-                <LoadingSpinner size={14} />
-              ) : (
-                t('ai_providers.health_check_button', { defaultValue: '健康检查' })
-              )}
-            </Button>
-          )}
           renderContent={(item, index) => {
             const stats = getStatsBySource(item.apiKey, keyStats, item.prefix);
             const headerEntries = Object.entries(item.headers || {});
@@ -295,8 +213,8 @@ export function VertexSection({
                       {t('ai_providers.vertex_models_count')}: {item.models.length}
                     </span>
                     {item.models.map((model) => {
-                      const healthResult = healthResults[item.apiKey]?.[model.name];
-                      const isChecking = checkingModel === `${item.apiKey}:${model.name}`;
+                      const healthResult = getModelResult(item, model.name);
+                      const showChecking = checkingAll && !healthResult;
                       return (
                         <span
                           key={`${model.name}-${model.alias || 'default'}`}
@@ -312,6 +230,7 @@ export function VertexSection({
                           {model.alias && (
                             <span className={styles.modelAlias}>{model.alias}</span>
                           )}
+                          {showChecking && <LoadingSpinner size={12} />}
                           {healthResult && (
                             <span
                               className={
@@ -319,27 +238,17 @@ export function VertexSection({
                                   ? styles.modelHealthBadge
                                   : styles.modelHealthBadgeUnhealthy
                               }
+                              title={healthResult.message || ''}
                             >
                               {healthResult.status === 'healthy'
                                 ? healthResult.latency_ms
                                   ? `${healthResult.latency_ms}ms`
                                   : '✓'
-                                : '✗'}
+                                : healthResult.status === 'timeout'
+                                  ? '⏱'
+                                  : '✗'}
                             </span>
                           )}
-                          <button
-                            type="button"
-                            className={styles.modelCheckButton}
-                            onClick={(e) => void handleModelHealthCheck(item.apiKey, item.prefix, model.name, e)}
-                            disabled={checkingModel !== null}
-                            title={t('ai_providers.health_check_single', { defaultValue: '检查此模型' })}
-                          >
-                            {isChecking ? (
-                              <LoadingSpinner size={12} />
-                            ) : (
-                              <span className={styles.checkIcon}>✓</span>
-                            )}
-                          </button>
                         </span>
                       );
                     })}

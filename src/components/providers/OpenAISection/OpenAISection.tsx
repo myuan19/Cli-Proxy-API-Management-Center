@@ -21,9 +21,8 @@ import { ProviderList } from '../ProviderList';
 import { ProviderStatusBar } from '../ProviderStatusBar';
 import { getOpenAIProviderStats, getStatsBySource } from '../utils';
 
-// 健康检查结果类型
 interface ModelHealthResult {
-  status: 'healthy' | 'unhealthy';
+  status: 'healthy' | 'unhealthy' | 'timeout' | 'checking';
   message?: string;
   latency_ms?: number;
 }
@@ -57,128 +56,73 @@ export function OpenAISection({
   const { showNotification } = useNotificationStore();
   const actionsDisabled = disableControls || loading || isSwitching;
 
-  // 健康检查状态: providerName -> modelName -> result
-  const [healthResults, setHealthResults] = useState<Record<string, Record<string, ModelHealthResult>>>({});
-  // 正在检查的模型: "providerName:modelName"
-  const [checkingModel, setCheckingModel] = useState<string | null>(null);
-  // 正在检查的 Provider
-  const [checkingProvider, setCheckingProvider] = useState<string | null>(null);
+  const [healthResults, setHealthResults] = useState<Record<string, ModelHealthResult>>({});
+  const [checkingAll, setCheckingAll] = useState(false);
 
-  // 单个模型健康检查
-  const handleModelHealthCheck = async (providerName: string, modelName: string, event: React.MouseEvent) => {
-    event.stopPropagation();
+  const handleCheckAll = async () => {
+    if (checkingAll) return;
+    setCheckingAll(true);
+    setHealthResults({});
 
-    const checkKey = `${providerName}:${modelName}`;
-    if (checkingModel) return;
-
-    setCheckingModel(checkKey);
+    let healthy = 0;
+    let unhealthy = 0;
 
     try {
-      const result = await providersApi.checkProvidersHealth({
-        name: providerName,
-        model: modelName,
-        timeout: 10,
-      });
-
-      if (result.providers.length > 0) {
-        const providerResult = result.providers[0];
-        setHealthResults((prev) => ({
-          ...prev,
-          [providerName]: {
-            ...prev[providerName],
-            [modelName]: {
-              status: providerResult.status,
-              message: providerResult.message,
-              latency_ms: providerResult.latency_ms,
-            },
+      await providersApi.checkProvidersHealthStream(
+        { type: 'openai-compatibility', timeout: 30 },
+        {
+          onResult: (item) => {
+            const key = `${item.prefix || item.name}::${item.model_tested || ''}`;
+            if (item.status === 'healthy') healthy++;
+            else unhealthy++;
+            setHealthResults((prev) => ({
+              ...prev,
+              [key]: {
+                status:
+                  item.status === 'healthy'
+                    ? 'healthy'
+                    : item.status === 'timeout'
+                      ? 'timeout'
+                      : 'unhealthy',
+                message: item.message,
+                latency_ms: item.latency_ms,
+              },
+            }));
           },
-        }));
-
-        if (providerResult.status === 'healthy') {
-          showNotification(
-            `${modelName}: ${t('ai_providers.health_status_healthy', { defaultValue: '健康' })}${providerResult.latency_ms ? ` (${providerResult.latency_ms}ms)` : ''}`,
-            'success'
-          );
-        } else {
-          showNotification(
-            `${modelName}: ${t('ai_providers.health_status_unhealthy', { defaultValue: '异常' })} - ${providerResult.message || ''}`,
-            'error'
-          );
+          onDone: () => {
+            setCheckingAll(false);
+            const total = healthy + unhealthy;
+            if (total > 0) {
+              if (unhealthy === 0) {
+                showNotification(
+                  t('ai_providers.health_check_all_healthy', {
+                    count: total,
+                    defaultValue: `所有 ${total} 个模型健康`,
+                  }),
+                  'success'
+                );
+              } else if (healthy === 0) {
+                showNotification(
+                  t('ai_providers.health_check_all_unhealthy', {
+                    count: total,
+                    defaultValue: `所有 ${total} 个模型异常`,
+                  }),
+                  'error'
+                );
+              } else {
+                showNotification(
+                  t('ai_providers.health_check_result', {
+                    healthy,
+                    unhealthy,
+                    defaultValue: `健康检查完成：${healthy} 个健康，${unhealthy} 个异常`,
+                  }),
+                  'warning'
+                );
+              }
+            }
+          },
         }
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      showNotification(
-        `${modelName}: ${t('ai_providers.health_check_failed', { defaultValue: '健康检查失败' })} - ${errorMessage}`,
-        'error'
       );
-    } finally {
-      setCheckingModel(null);
-    }
-  };
-
-  // Provider 级别的健康检查（检查所有模型）
-  const handleProviderHealthCheck = async (provider: OpenAIProviderConfig, event: React.MouseEvent) => {
-    event.stopPropagation();
-
-    if (checkingProvider || checkingModel) return;
-    if (!provider.models?.length) {
-      showNotification(t('ai_providers.health_check_no_models', { defaultValue: '该提供商没有配置模型' }), 'warning');
-      return;
-    }
-
-    setCheckingProvider(provider.name);
-
-    try {
-      // 获取所有模型名称
-      const modelNames = provider.models.map(m => m.name).join(',');
-      const result = await providersApi.checkProvidersHealth({
-        name: provider.name,
-        models: modelNames,
-        timeout: 30,
-      });
-
-      // 更新所有模型的健康检查结果
-      const newResults: Record<string, ModelHealthResult> = {};
-      result.providers.forEach((providerResult) => {
-        if (providerResult.model_tested) {
-          newResults[providerResult.model_tested] = {
-            status: providerResult.status,
-            message: providerResult.message,
-            latency_ms: providerResult.latency_ms,
-          };
-        }
-      });
-
-      setHealthResults((prev) => ({
-        ...prev,
-        [provider.name]: {
-          ...prev[provider.name],
-          ...newResults,
-        },
-      }));
-
-      // 显示汇总通知
-      if (result.healthy_count === result.total_count) {
-        showNotification(
-          t('ai_providers.health_check_all_healthy', { count: result.total_count, defaultValue: `所有 ${result.total_count} 个模型健康` }),
-          'success'
-        );
-      } else if (result.unhealthy_count === result.total_count) {
-        showNotification(
-          t('ai_providers.health_check_all_unhealthy', { count: result.total_count, defaultValue: `所有 ${result.total_count} 个模型异常` }),
-          'error'
-        );
-      } else {
-        showNotification(
-          t('ai_providers.health_check_result', {
-            healthy: result.healthy_count,
-            unhealthy: result.unhealthy_count,
-            defaultValue: `健康检查完成：${result.healthy_count} 个健康，${result.unhealthy_count} 个异常`,
-          }),
-          'warning'
-        );
-      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       showNotification(
@@ -186,8 +130,16 @@ export function OpenAISection({
         'error'
       );
     } finally {
-      setCheckingProvider(null);
+      setCheckingAll(false);
     }
+  };
+
+  const getModelResult = (
+    provider: OpenAIProviderConfig,
+    modelName: string
+  ): ModelHealthResult | undefined => {
+    const key = `${provider.prefix || provider.name}::${modelName}`;
+    return healthResults[key];
   };
 
   const statusBarCache = useMemo(() => {
@@ -223,9 +175,23 @@ export function OpenAISection({
           </span>
         }
         extra={
-          <Button size="sm" onClick={onAdd} disabled={actionsDisabled}>
-            {t('ai_providers.openai_add_button')}
-          </Button>
+          <div className={styles.cardHeaderActions}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void handleCheckAll()}
+              disabled={actionsDisabled || checkingAll || configs.length === 0}
+            >
+              {checkingAll ? (
+                <LoadingSpinner size={14} />
+              ) : (
+                t('ai_providers.health_check_all', { defaultValue: '全部检查' })
+              )}
+            </Button>
+            <Button size="sm" onClick={onAdd} disabled={actionsDisabled}>
+              {t('ai_providers.openai_add_button')}
+            </Button>
+          </div>
         }
       >
         <ProviderList<OpenAIProviderConfig>
@@ -237,21 +203,6 @@ export function OpenAISection({
           onEdit={onEdit}
           onDelete={onDelete}
           actionsDisabled={actionsDisabled}
-          renderExtraActions={(item) => (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => void handleProviderHealthCheck(item, e)}
-              disabled={checkingProvider !== null || checkingModel !== null}
-              className={styles.providerHealthCheckButton}
-            >
-              {checkingProvider === item.name ? (
-                <LoadingSpinner size={14} />
-              ) : (
-                t('ai_providers.health_check_button', { defaultValue: '健康检查' })
-              )}
-            </Button>
-          )}
           renderContent={(item) => {
             const stats = getOpenAIProviderStats(item.apiKeyEntries, keyStats, item.prefix);
             const headerEntries = Object.entries(item.headers || {});
@@ -326,8 +277,8 @@ export function OpenAISection({
                 {item.models?.length ? (
                   <div className={styles.modelTagList}>
                     {item.models.map((model) => {
-                      const healthResult = healthResults[item.name]?.[model.name];
-                      const isChecking = checkingModel === `${item.name}:${model.name}`;
+                      const healthResult = getModelResult(item, model.name);
+                      const showChecking = checkingAll && !healthResult;
                       return (
                         <span
                           key={model.name}
@@ -335,7 +286,9 @@ export function OpenAISection({
                             healthResult
                               ? healthResult.status === 'healthy'
                                 ? styles.modelTagHealthy
-                                : styles.modelTagUnhealthy
+                                : healthResult.status === 'timeout'
+                                  ? styles.modelTagTimeout
+                                  : styles.modelTagUnhealthy
                               : ''
                           }`}
                         >
@@ -343,34 +296,27 @@ export function OpenAISection({
                           {model.alias && model.alias !== model.name && (
                             <span className={styles.modelAlias}>{model.alias}</span>
                           )}
+                          {showChecking && <LoadingSpinner size={12} />}
                           {healthResult && (
                             <span
                               className={
                                 healthResult.status === 'healthy'
                                   ? styles.modelHealthBadge
-                                  : styles.modelHealthBadgeUnhealthy
+                                  : healthResult.status === 'timeout'
+                                    ? styles.modelHealthBadgeTimeout
+                                    : styles.modelHealthBadgeUnhealthy
                               }
+                              title={healthResult.message || ''}
                             >
                               {healthResult.status === 'healthy'
                                 ? healthResult.latency_ms
                                   ? `${healthResult.latency_ms}ms`
                                   : '✓'
-                                : '✗'}
+                                : healthResult.status === 'timeout'
+                                  ? '⏱'
+                                  : '✗'}
                             </span>
                           )}
-                          <button
-                            type="button"
-                            className={styles.modelCheckButton}
-                            onClick={(e) => void handleModelHealthCheck(item.name, model.name, e)}
-                            disabled={checkingModel !== null}
-                            title={t('ai_providers.health_check_single', { defaultValue: '检查此模型' })}
-                          >
-                            {isChecking ? (
-                              <LoadingSpinner size={12} />
-                            ) : (
-                              <span className={styles.checkIcon}>✓</span>
-                            )}
-                          </button>
                         </span>
                       );
                     })}
