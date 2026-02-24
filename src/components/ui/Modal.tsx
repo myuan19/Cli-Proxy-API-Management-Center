@@ -47,6 +47,8 @@ export function Modal({
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   const startClose = useCallback(
     (notifyParent: boolean) => {
@@ -57,11 +59,11 @@ export function Modal({
         setIsClosing(false);
         closeTimerRef.current = null;
         if (notifyParent) {
-          onClose();
+          onCloseRef.current();
         }
       }, CLOSE_ANIMATION_DURATION);
     },
-    [onClose]
+    []
   );
 
   useEffect(() => {

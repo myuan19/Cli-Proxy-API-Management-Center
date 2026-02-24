@@ -519,7 +519,7 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
                           </div>
                           <div className={styles.attemptRow}>
                             <span className={styles.attemptLabel}>{t('unified_routing.latency')}:</span>
-                            <span className={styles.attemptValue}>{attempt.latency_ms}ms</span>
+                            <span className={styles.attemptValue}>{attempt.latency_ms ?? 0}ms</span>
                           </div>
                           {attempt.error && (
                             <div className={styles.attemptError}>

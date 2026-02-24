@@ -72,10 +72,12 @@ export function RouteCard({
     localStorage.setItem(storageKey, String(newState));
   };
   
-  // Health check state
-  const [checkingAll, setCheckingAll] = useState(false);
+  // Simulate route results (column 1, alongside normal request status)
   const [simulating, setSimulating] = useState(false);
-  const [healthStatus, setHealthStatus] = useState<Record<string, TargetHealthStatus>>({});
+  const [simulateStatus, setSimulateStatus] = useState<Record<string, TargetHealthStatus>>({});
+  // Health check results (column 2, separate)
+  const [checkingAll, setCheckingAll] = useState(false);
+  const [healthCheckStatus, setHealthCheckStatus] = useState<Record<string, TargetHealthStatus>>({});
   
   // Error modal state
   const [errorModal, setErrorModal] = useState<ErrorModalInfo | null>(null);
@@ -95,12 +97,12 @@ export function RouteCard({
         }
       });
     });
-    setHealthStatus({ ...allTargets });
+    setHealthCheckStatus({ ...allTargets });
     
     try {
       await unifiedRoutingApi.triggerHealthCheckStream(route.id, {
         onResult: (result: HealthResult) => {
-          setHealthStatus(prev => ({
+          setHealthCheckStatus(prev => ({
             ...prev,
             [result.target_id]: {
               status: result.status === 'healthy' ? 'success' : 'failed',
@@ -115,8 +117,7 @@ export function RouteCard({
       });
     } catch (error) {
       console.error('Check all failed:', error);
-      // Mark remaining "checking" targets as failed
-      setHealthStatus(prev => {
+      setHealthCheckStatus(prev => {
         const updated = { ...prev };
         Object.keys(updated).forEach(id => {
           if (updated[id].status === 'checking') {
@@ -133,13 +134,11 @@ export function RouteCard({
   // Handle "Simulate Route" - simulate routing flow (follows real routing logic)
   const handleSimulateRoute = async () => {
     setSimulating(true);
-    setHealthStatus({});
+    setSimulateStatus({});
     
     try {
       const result = await unifiedRoutingApi.simulateRoute(route.id, false);
       
-      // Update health status based on simulate results
-      // Only targets that were actually tried will have results
       const newStatus: Record<string, TargetHealthStatus> = {};
       result.attempts.forEach(layer => {
         layer.targets.forEach(target => {
@@ -150,7 +149,7 @@ export function RouteCard({
           };
         });
       });
-      setHealthStatus(newStatus);
+      setSimulateStatus(newStatus);
     } catch (error) {
       console.error('Simulate route failed:', error);
     } finally {
@@ -158,10 +157,12 @@ export function RouteCard({
     }
   };
   
-  // Clear health check results
-  const clearHealthStatus = () => {
-    setHealthStatus({});
+  const clearAllResults = () => {
+    setSimulateStatus({});
+    setHealthCheckStatus({});
   };
+  
+  const hasAnyResults = Object.keys(simulateStatus).length > 0 || Object.keys(healthCheckStatus).length > 0;
 
   // Get credential info by ID
   const getCredentialInfo = (credentialId: string) => {
@@ -242,11 +243,11 @@ export function RouteCard({
           >
             {t('unified_routing.check_all')}
           </Button>
-          {Object.keys(healthStatus).length > 0 && (
+          {hasAnyResults && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={clearHealthStatus}
+              onClick={clearAllResults}
               disabled={disabled || checkingAll || simulating}
             >
               ✕
@@ -317,8 +318,40 @@ export function RouteCard({
                       {layer.targets.map((target, idx) => {
                         const cred = getCredentialInfo(target.credential_id);
                         const state = getTargetState(target.id);
-                        const health = healthStatus[target.id];
+                        const sim = simulateStatus[target.id];
+                        const hc = healthCheckStatus[target.id];
                         const isLast = idx === layer.targets.length - 1;
+
+                        const targetLabel = `${cred?.provider || 'unknown'}/${cred?.label || target.credential_id}/${target.model}`;
+
+                        const renderResultBadge = (result: TargetHealthStatus) => {
+                          const isFailed = result.status === 'failed' && result.message;
+                          return (
+                            <span
+                              className={`${styles.healthStatus} ${
+                                result.status === 'checking' ? styles.healthChecking :
+                                result.status === 'success' ? styles.healthSuccess :
+                                result.status === 'skipped' ? styles.healthSkipped :
+                                styles.healthFailed
+                              } ${isFailed ? styles.clickable : ''}`}
+                              title={result.message}
+                              onClick={isFailed ? (e) => {
+                                e.stopPropagation();
+                                setErrorModal({ targetName: targetLabel, errorMessage: result.message! });
+                              } : undefined}
+                            >
+                              {result.status === 'checking' ? (
+                                <>⟳ {t('unified_routing.checking')}</>
+                              ) : result.status === 'success' ? (
+                                <>✓ {result.latency_ms ? `${result.latency_ms}ms` : t('unified_routing.success')}</>
+                              ) : result.status === 'skipped' ? (
+                                <>- {t('unified_routing.skipped')}</>
+                              ) : (
+                                <>✕ {t('unified_routing.failed')}</>
+                              )}
+                            </span>
+                          );
+                        };
 
                         return (
                           <div
@@ -339,87 +372,77 @@ export function RouteCard({
                               /
                               <span className={styles.model}>{target.model}</span>
                             </span>
-                            
-                            {/* Target runtime status (always show) */}
-                            <span
-                              className={`${styles.targetStatus} ${getStatusClass(state?.status)} ${(state?.status === 'cooling' || state?.status === 'checking') && state?.last_failure_reason ? styles.clickable : ''}`}
-                              title={(state?.status === 'cooling' || state?.status === 'checking') && state?.last_failure_reason ? state.last_failure_reason : undefined}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if ((state?.status === 'cooling' || state?.status === 'checking') && state?.last_failure_reason) {
-                                  const credInfo = getCredentialInfo(target.credential_id);
-                                  setErrorModal({
-                                    targetName: `${credInfo?.provider || 'unknown'}/${credInfo?.label || target.credential_id}/${target.model}`,
-                                    errorMessage: state.last_failure_reason,
-                                  });
-                                }
-                              }}
-                            >
-                              {state?.status === 'checking' ? (
-                                <>●</>
-                              ) : state?.status === 'cooling' ? (
-                                (() => {
-                                  const text = formatCooldown(state);
-                                  if (text != null) return <>○ {text}</>;
-                                  return <>●</>;
-                                })()
-                              ) : (
-                                <>●</>
-                              )}
-                            </span>
-                            
-                            {/* Request stats */}
-                            {state && state.total_requests > 0 && (
-                              <span className={styles.targetStats}>
-                                [{state.successful_requests}/{state.total_requests}]
-                              </span>
-                            )}
-                            
-                            {/* Health check result (separate column, only when available) */}
-                            {health && (
+
+                            {/* Column 1: Runtime status + Simulate route */}
+                            <span className={styles.col1}>
                               <span
-                                className={`${styles.healthStatus} ${
-                                  health.status === 'checking' ? styles.healthChecking :
-                                  health.status === 'success' ? styles.healthSuccess :
-                                  health.status === 'skipped' ? styles.healthSkipped :
-                                  styles.healthFailed
-                                }`}
-                                title={health.message}
+                                className={`${styles.targetStatus} ${getStatusClass(state?.status)}`}
                               >
-                                {health.status === 'checking' ? (
-                                  <>⟳ {t('unified_routing.checking')}</>
-                                ) : health.status === 'success' ? (
-                                  <>✓ {health.latency_ms ? `${health.latency_ms}ms` : t('unified_routing.success')}</>
-                                ) : health.status === 'skipped' ? (
-                                  <>- {t('unified_routing.skipped')}</>
+                                {state?.status === 'checking' ? (
+                                  <>●</>
+                                ) : state?.status === 'cooling' ? (
+                                  (() => {
+                                    const text = formatCooldown(state);
+                                    if (text != null) return <>○ {text}</>;
+                                    return <>●</>;
+                                  })()
                                 ) : (
-                                  <>✕ {t('unified_routing.failed')}</>
+                                  <>●</>
                                 )}
                               </span>
-                            )}
-                            <div
-                              className={styles.targetActions}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <button
-                                className={styles.iconButton}
-                                onClick={() => onEditTarget(route.id, layer.level, target)}
-                                disabled={disabled}
-                                title={t('common.edit')}
+                              {sim?.status === 'success' && sim.latency_ms != null && (
+                                <span className={styles.simLatency}>
+                                  {sim.latency_ms}ms
+                                </span>
+                              )}
+                              {(state?.status === 'cooling' || state?.status === 'checking') && state?.last_failure_reason && (
+                                <span
+                                  className={`${styles.failureLabel} ${styles.clickable}`}
+                                  title={state.last_failure_reason}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setErrorModal({ targetName: targetLabel, errorMessage: state.last_failure_reason! });
+                                  }}
+                                >
+                                  {t('unified_routing.failed')}
+                                </span>
+                              )}
+                              {state && state.total_requests > 0 && (
+                                <span className={styles.targetStats}>
+                                  [{state.successful_requests}/{state.total_requests}]
+                                </span>
+                              )}
+                            </span>
+
+                            {/* Right section: Column 2 (health check) + actions */}
+                            <span className={styles.rightSection}>
+                              <span className={styles.col2}>
+                                {hc ? renderResultBadge(hc) : null}
+                              </span>
+                              <span
+                                className={styles.targetActions}
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                ✎
-                              </button>
-                              <button
-                                className={styles.iconButton}
-                                onClick={() =>
-                                  onDeleteTarget(route.id, layer.level, target.id)
-                                }
-                                disabled={disabled}
-                                title={t('common.delete')}
-                              >
-                                ✕
-                              </button>
-                            </div>
+                                <button
+                                  className={styles.iconButton}
+                                  onClick={() => onEditTarget(route.id, layer.level, target)}
+                                  disabled={disabled}
+                                  title={t('common.edit')}
+                                >
+                                  ✎
+                                </button>
+                                <button
+                                  className={styles.iconButton}
+                                  onClick={() =>
+                                    onDeleteTarget(route.id, layer.level, target.id)
+                                  }
+                                  disabled={disabled}
+                                  title={t('common.delete')}
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            </span>
                           </div>
                         );
                       })}

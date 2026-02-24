@@ -38,8 +38,23 @@ export interface DetailedRequestRecord {
   error?: string;
 }
 
+export interface DetailedRequestSummary {
+  id: string;
+  timestamp: string;
+  api_key: string;
+  api_key_hash: string;
+  url: string;
+  method: string;
+  status_code: number;
+  model?: string;
+  total_duration_ms: number;
+  is_streaming: boolean;
+  error?: string;
+  attempt_count: number;
+}
+
 export interface DetailedRequestsListResponse {
-  records: DetailedRequestRecord[];
+  records: DetailedRequestSummary[];
   total: number;
   offset: number;
   limit: number;
