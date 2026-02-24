@@ -369,6 +369,14 @@
   font-weight: 500;
 }
 
+.aliasHint {
+  color: var(--text-tertiary);
+  font-weight: 400;
+  font-size: inherit;
+  margin-left: 1px;
+  cursor: default;
+}
+
 .traceArrow {
   color: var(--text-tertiary);
   font-weight: bold;

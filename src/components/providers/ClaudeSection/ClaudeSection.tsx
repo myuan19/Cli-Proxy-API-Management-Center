@@ -10,7 +10,6 @@ import { maskApiKey } from '@/utils/format';
 import {
   buildCandidateUsageSourceIds,
   calculateStatusBarData,
-  type KeyStats,
   type UsageDetail,
 } from '@/utils/usage';
 import { providersApi } from '@/services/api';
@@ -18,7 +17,7 @@ import { useNotificationStore } from '@/stores';
 import styles from '@/pages/AiProvidersPage.module.scss';
 import { ProviderList } from '../ProviderList';
 import { ProviderStatusBar } from '../ProviderStatusBar';
-import { getStatsBySource, hasDisableAllModelsRule } from '../utils';
+import { hasDisableAllModelsRule } from '../utils';
 
 interface ModelHealthResult {
   status: 'healthy' | 'unhealthy' | 'timeout' | 'checking';
@@ -28,7 +27,6 @@ interface ModelHealthResult {
 
 interface ClaudeSectionProps {
   configs: ProviderKeyConfig[];
-  keyStats: KeyStats;
   usageDetails: UsageDetail[];
   loading: boolean;
   disableControls: boolean;
@@ -41,7 +39,6 @@ interface ClaudeSectionProps {
 
 export function ClaudeSection({
   configs,
-  keyStats,
   usageDetails,
   loading,
   disableControls,
@@ -190,7 +187,6 @@ export function ClaudeSection({
             />
           )}
           renderContent={(item) => {
-            const stats = getStatsBySource(item.apiKey, keyStats, item.prefix);
             const headerEntries = Object.entries(item.headers || {});
             const configDisabled = hasDisableAllModelsRule(item.excludedModels);
             const excludedModels = item.excludedModels ?? [];
@@ -328,14 +324,6 @@ export function ClaudeSection({
                     </div>
                   </div>
                 ) : null}
-                <div className={styles.cardStats}>
-                  <span className={`${styles.statPill} ${styles.statSuccess}`}>
-                    {t('stats.success')}: {stats.success}
-                  </span>
-                  <span className={`${styles.statPill} ${styles.statFailure}`}>
-                    {t('stats.failure')}: {stats.failure}
-                  </span>
-                </div>
                 <ProviderStatusBar statusData={statusData} />
               </Fragment>
             );

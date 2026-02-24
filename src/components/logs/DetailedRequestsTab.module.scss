@@ -284,6 +284,21 @@
   @extend .modelBadge;
 }
 
+.formatBadge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: $radius-sm;
+  font-size: 10px;
+  font-weight: 500;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  margin-left: 6px;
+  vertical-align: middle;
+  line-height: 1.4;
+  letter-spacing: 0.3px;
+}
+
 .statusBadge {
   font-weight: 600;
   font-size: 13px;

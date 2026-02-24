@@ -17,7 +17,7 @@ import type {
 } from '@/services/api/detailedRequests';
 import styles from './DetailedRequestsTab.module.scss';
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 30;
 const AUTO_REFRESH_INTERVAL = 2000;
 
 interface Props {
@@ -30,6 +30,16 @@ interface Props {
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
+
+function inferRequestFormat(url: string): string | null {
+  if (!url) return null;
+  if (url.includes('/v1/responses')) return 'openai-response';
+  if (url.includes('/v1/chat/completions') || url.includes('/v1/completions')) return 'openai';
+  if (url.includes('/v1/messages')) return 'claude';
+  if (url.includes('/v1beta/models/')) return 'gemini';
+  if (url.includes('/v1internal')) return 'gemini-cli';
+  return null;
+}
 
 function statusClass(code: number): string {
   if (code >= 500) return styles.status5xx;
@@ -173,7 +183,7 @@ function DataBlock({
   defaultOpen = false,
   downloadPrefix,
 }: {
-  title: string;
+  title: React.ReactNode;
   headers?: Record<string, string[]>;
   body?: string;
   titleClass?: string;
@@ -534,7 +544,7 @@ function RecordCard({
             </div>
 
             <DataBlock
-              title={t('detailed_requests.client_request')}
+              title={<>{t('detailed_requests.client_request')}{(() => { const fmt = inferRequestFormat(record.url); return fmt ? <span className={styles.formatBadge} title={t('detailed_requests.format_label', { defaultValue: '格式' })}>{fmt}</span> : null; })()}</>}
               headers={record.request_headers}
               body={record.request_body}
               downloadPrefix={`${record.id}-client-request`}
@@ -677,8 +687,7 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
       const newRecords = data.records || [];
       const newIds = newRecords.map((r) => `${r.id}:${r.status_code}`).join(',');
 
-      // Only update DOM if data changed (avoid flicker on auto-refresh)
-      if (newIds !== lastIds.current) {
+      if (newIds !== lastIds.current || isFirstLoad.current) {
         setRecords(newRecords);
         lastIds.current = newIds;
       }

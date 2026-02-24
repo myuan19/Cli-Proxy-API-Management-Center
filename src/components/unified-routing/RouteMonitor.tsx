@@ -145,7 +145,15 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
   // Format: route → L1/provider/email (red if failed, green if success)
   const buildTracePath = (trace: RequestTrace): React.ReactNode => {
     const parts: React.ReactNode[] = [];
+    const isAlias = trace.input_model && trace.input_model !== trace.route_name;
     parts.push(<span key="route" className={styles.routeName}>{trace.route_name}</span>);
+    if (isAlias) {
+      parts.push(
+        <span key="alias" className={styles.aliasHint} title={t('unified_routing.alias', { defaultValue: '别名' })}>
+          ({trace.input_model})
+        </span>
+      );
+    }
 
     if (trace.attempts && trace.attempts.length > 0) {
       trace.attempts.forEach((attempt, idx) => {
@@ -460,7 +468,12 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
               </div>
               <div className={styles.traceInfoRow}>
                 <span className={styles.traceInfoLabel}>{t('unified_routing.route')}:</span>
-                <span className={styles.traceInfoValue}>{selectedTrace.route_name}</span>
+                <span className={styles.traceInfoValue}>
+                  {selectedTrace.route_name}
+                  {selectedTrace.input_model && selectedTrace.input_model !== selectedTrace.route_name && (
+                    <span className={styles.aliasHint} title={t('unified_routing.alias', { defaultValue: '别名' })}>({selectedTrace.input_model})</span>
+                  )}
+                </span>
               </div>
               <div className={styles.traceInfoRow}>
                 <span className={styles.traceInfoLabel}>{t('unified_routing.time')}:</span>

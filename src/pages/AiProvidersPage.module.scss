@@ -500,16 +500,9 @@
 }
 
 .statusBlock {
-  flex: 1;
   height: 8px;
   border-radius: 2px;
-  min-width: 6px;
   transition: transform 0.15s ease, opacity 0.15s ease;
-
-  &:hover {
-    transform: scaleY(1.5);
-    opacity: 0.85;
-  }
 }
 
 .statusBlockSuccess {
@@ -526,6 +519,72 @@
 
 .statusBlockIdle {
   background-color: var(--border-secondary, #e5e7eb);
+}
+
+.statusBlockWrapper {
+  position: relative;
+  flex: 1;
+  min-width: 6px;
+}
+
+.statusBlockActive .statusBlock {
+  transform: scaleY(1.8);
+  opacity: 0.9;
+}
+
+.statusTooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  white-space: nowrap;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.statusTooltipLeft {
+  left: 0;
+  transform: none;
+}
+
+.statusTooltipRight {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.tooltipTime {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.tooltipStats {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tooltipSuccess {
+  color: var(--success-color, #22c55e);
+  font-weight: 600;
+}
+
+.tooltipFailure {
+  color: var(--danger-color, #ef4444);
+  font-weight: 600;
+}
+
+.tooltipRate {
+  color: var(--text-secondary);
 }
 
 .statusRate {

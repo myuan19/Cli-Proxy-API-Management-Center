@@ -113,6 +113,7 @@ export interface RequestTrace {
   trace_id: string;
   route_id: string;
   route_name: string;
+  input_model?: string;
   timestamp: string;
   status: TraceStatus;
   total_latency_ms: number;

@@ -2,7 +2,6 @@ import { Fragment, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { IconCheck, IconX } from '@/components/ui/icons';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import iconOpenaiLight from '@/assets/icons/openai-light.svg';
 import iconOpenaiDark from '@/assets/icons/openai-dark.svg';
@@ -11,7 +10,6 @@ import { maskApiKey } from '@/utils/format';
 import {
   buildCandidateUsageSourceIds,
   calculateStatusBarData,
-  type KeyStats,
   type UsageDetail,
 } from '@/utils/usage';
 import { providersApi } from '@/services/api';
@@ -19,7 +17,6 @@ import { useNotificationStore } from '@/stores';
 import styles from '@/pages/AiProvidersPage.module.scss';
 import { ProviderList } from '../ProviderList';
 import { ProviderStatusBar } from '../ProviderStatusBar';
-import { getOpenAIProviderStats, getStatsBySource } from '../utils';
 
 interface ModelHealthResult {
   status: 'healthy' | 'unhealthy' | 'timeout' | 'checking';
@@ -29,7 +26,6 @@ interface ModelHealthResult {
 
 interface OpenAISectionProps {
   configs: OpenAIProviderConfig[];
-  keyStats: KeyStats;
   usageDetails: UsageDetail[];
   loading: boolean;
   disableControls: boolean;
@@ -42,7 +38,6 @@ interface OpenAISectionProps {
 
 export function OpenAISection({
   configs,
-  keyStats,
   usageDetails,
   loading,
   disableControls,
@@ -204,7 +199,6 @@ export function OpenAISection({
           onDelete={onDelete}
           actionsDisabled={actionsDisabled}
           renderContent={(item) => {
-            const stats = getOpenAIProviderStats(item.apiKeyEntries, keyStats, item.prefix);
             const headerEntries = Object.entries(item.headers || {});
             const apiKeyEntries = item.apiKeyEntries || [];
             const statusData = statusBarCache.get(item.name) || calculateStatusBarData([]);
@@ -243,30 +237,15 @@ export function OpenAISection({
                       {t('ai_providers.openai_keys_count')}: {apiKeyEntries.length}
                     </div>
                     <div className={styles.apiKeyEntryList}>
-                      {apiKeyEntries.map((entry, entryIndex) => {
-                        const entryStats = getStatsBySource(entry.apiKey, keyStats);
-                        return (
+                      {apiKeyEntries.map((entry, entryIndex) => (
                           <div key={entryIndex} className={styles.apiKeyEntryCard}>
                             <span className={styles.apiKeyEntryIndex}>{entryIndex + 1}</span>
                             <span className={styles.apiKeyEntryKey}>{maskApiKey(entry.apiKey)}</span>
                             {entry.proxyUrl && (
                               <span className={styles.apiKeyEntryProxy}>{entry.proxyUrl}</span>
                             )}
-                            <div className={styles.apiKeyEntryStats}>
-                              <span
-                                className={`${styles.apiKeyEntryStat} ${styles.apiKeyEntryStatSuccess}`}
-                              >
-                                <IconCheck size={12} /> {entryStats.success}
-                              </span>
-                              <span
-                                className={`${styles.apiKeyEntryStat} ${styles.apiKeyEntryStatFailure}`}
-                              >
-                                <IconX size={12} /> {entryStats.failure}
-                              </span>
-                            </div>
                           </div>
-                        );
-                      })}
+                      ))}
                     </div>
                   </div>
                 )}
@@ -322,14 +301,6 @@ export function OpenAISection({
                     })}
                   </div>
                 ) : null}
-                <div className={styles.cardStats}>
-                  <span className={`${styles.statPill} ${styles.statSuccess}`}>
-                    {t('stats.success')}: {stats.success}
-                  </span>
-                  <span className={`${styles.statPill} ${styles.statFailure}`}>
-                    {t('stats.failure')}: {stats.failure}
-                  </span>
-                </div>
                 <ProviderStatusBar statusData={statusData} />
               </Fragment>
             );

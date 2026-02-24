@@ -58,7 +58,7 @@ export function AiProvidersPage() {
   const disableControls = connectionStatus !== 'connected';
   const isSwitching = Boolean(configSwitchingKey);
 
-  const { keyStats, usageDetails, loadKeyStats } = useProviderStats();
+  const { usageDetails, loadKeyStats } = useProviderStats();
 
   const getErrorMessage = (err: unknown) => {
     if (err instanceof Error) return err.message;
@@ -345,7 +345,6 @@ export function AiProvidersPage() {
         <div id="provider-gemini">
           <GeminiSection
             configs={geminiKeys}
-            keyStats={keyStats}
             usageDetails={usageDetails}
             loading={loading}
             disableControls={disableControls}
@@ -360,7 +359,6 @@ export function AiProvidersPage() {
         <div id="provider-codex">
           <CodexSection
             configs={codexConfigs}
-            keyStats={keyStats}
             usageDetails={usageDetails}
             loading={loading}
             disableControls={disableControls}
@@ -376,7 +374,6 @@ export function AiProvidersPage() {
         <div id="provider-claude">
           <ClaudeSection
             configs={claudeConfigs}
-            keyStats={keyStats}
             usageDetails={usageDetails}
             loading={loading}
             disableControls={disableControls}
@@ -391,7 +388,6 @@ export function AiProvidersPage() {
         <div id="provider-vertex">
           <VertexSection
             configs={vertexConfigs}
-            keyStats={keyStats}
             usageDetails={usageDetails}
             loading={loading}
             disableControls={disableControls}
@@ -415,7 +411,6 @@ export function AiProvidersPage() {
         <div id="provider-openai">
           <OpenAISection
             configs={openaiProviders}
-            keyStats={keyStats}
             usageDetails={usageDetails}
             loading={loading}
             disableControls={disableControls}
