@@ -2,18 +2,11 @@
  * Normalization and parsing functions for quota data.
  */
 
-import type { CodexUsagePayload, GeminiCliQuotaPayload } from '@/types';
+import type { ClaudeUsagePayload, CodexUsagePayload, GeminiCliQuotaPayload } from '@/types';
+import { normalizeAuthIndex } from '@/utils/usage';
 
-export function normalizeAuthIndexValue(value: unknown): string | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value.toString();
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed ? trimmed : null;
-  }
-  return null;
-}
+const GEMINI_CLI_MODEL_SUFFIX = '_vertex';
+export { normalizeAuthIndex };
 
 export function normalizeStringValue(value: unknown): string | null {
   if (typeof value === 'string') {
@@ -24,6 +17,15 @@ export function normalizeStringValue(value: unknown): string | null {
     return value.toString();
   }
   return null;
+}
+
+export function normalizeGeminiCliModelId(value: unknown): string | null {
+  const modelId = normalizeStringValue(value);
+  if (!modelId) return null;
+  if (modelId.endsWith(GEMINI_CLI_MODEL_SUFFIX)) {
+    return modelId.slice(0, -GEMINI_CLI_MODEL_SUFFIX.length);
+  }
+  return modelId;
 }
 
 export function normalizeNumberValue(value: unknown): number | null {
@@ -114,6 +116,23 @@ export function parseAntigravityPayload(payload: unknown): Record<string, unknow
   }
   if (typeof payload === 'object') {
     return payload as Record<string, unknown>;
+  }
+  return null;
+}
+
+export function parseClaudeUsagePayload(payload: unknown): ClaudeUsagePayload | null {
+  if (payload === undefined || payload === null) return null;
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim();
+    if (!trimmed) return null;
+    try {
+      return JSON.parse(trimmed) as ClaudeUsagePayload;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof payload === 'object') {
+    return payload as ClaudeUsagePayload;
   }
   return null;
 }

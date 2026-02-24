@@ -5,17 +5,29 @@ import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { yaml } from '@codemirror/lang-yaml';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { keymap } from '@codemirror/view';
+import { parse as parseYaml } from 'yaml';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { IconCheck, IconChevronDown, IconChevronUp, IconRefreshCw, IconSearch } from '@/components/ui/icons';
 import { VisualConfigEditor } from '@/components/config/VisualConfigEditor';
+import { DiffModal } from '@/components/config/DiffModal';
 import { useVisualConfig } from '@/hooks/useVisualConfig';
 import { useNotificationStore, useAuthStore, useThemeStore } from '@/stores';
 import { configFileApi } from '@/services/api/configFile';
 import styles from './ConfigPage.module.scss';
 
 type ConfigEditorTab = 'visual' | 'source';
+
+function readCommercialModeFromYaml(yamlContent: string): boolean {
+  try {
+    const parsed = parseYaml(yamlContent);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    return Boolean((parsed as Record<string, unknown>)['commercial-mode']);
+  } catch {
+    return false;
+  }
+}
 
 export function ConfigPage() {
   const { t } = useTranslation();
@@ -42,6 +54,9 @@ export function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [diffModalOpen, setDiffModalOpen] = useState(false);
+  const [serverYaml, setServerYaml] = useState('');
+  const [mergedYaml, setMergedYaml] = useState('');
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,6 +77,9 @@ export function ConfigPage() {
       const data = await configFileApi.fetchConfigYaml();
       setContent(data);
       setDirty(false);
+      setDiffModalOpen(false);
+      setServerYaml(data);
+      setMergedYaml(data);
       loadVisualValuesFromYaml(data);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t('notification.refresh_failed');
@@ -75,16 +93,52 @@ export function ConfigPage() {
     loadConfig();
   }, [loadConfig]);
 
+  const handleConfirmSave = async () => {
+    setSaving(true);
+    try {
+      const previousCommercialMode = readCommercialModeFromYaml(serverYaml);
+      const nextCommercialMode = readCommercialModeFromYaml(mergedYaml);
+      const commercialModeChanged = previousCommercialMode !== nextCommercialMode;
+
+      await configFileApi.saveConfigYaml(mergedYaml);
+      const latestContent = await configFileApi.fetchConfigYaml();
+      setDirty(false);
+      setDiffModalOpen(false);
+      setContent(latestContent);
+      setServerYaml(latestContent);
+      setMergedYaml(latestContent);
+      loadVisualValuesFromYaml(latestContent);
+      showNotification(t('config_management.save_success'), 'success');
+      if (commercialModeChanged) {
+        showNotification(t('notification.commercial_mode_restart_required'), 'warning');
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '';
+      showNotification(`${t('notification.save_failed')}: ${message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      const nextContent = activeTab === 'visual' ? applyVisualChangesToYaml(content) : content;
-      await configFileApi.saveConfigYaml(nextContent);
-      const latestContent = await configFileApi.fetchConfigYaml();
-      setDirty(false);
-      setContent(latestContent);
-      loadVisualValuesFromYaml(latestContent);
-      showNotification(t('config_management.save_success'), 'success');
+      const nextMergedYaml = applyVisualChangesToYaml(content);
+      const latestServerYaml = await configFileApi.fetchConfigYaml();
+
+      if (latestServerYaml === nextMergedYaml) {
+        setDirty(false);
+        setContent(latestServerYaml);
+        setServerYaml(latestServerYaml);
+        setMergedYaml(nextMergedYaml);
+        loadVisualValuesFromYaml(latestServerYaml);
+        showNotification(t('config_management.diff.no_changes'), 'info');
+        return;
+      }
+
+      setServerYaml(latestServerYaml);
+      setMergedYaml(nextMergedYaml);
+      setDiffModalOpen(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '';
       showNotification(`${t('notification.save_failed')}: ${message}`, 'error');
@@ -309,7 +363,7 @@ export function ConfigPage() {
           type="button"
           className={styles.floatingActionButton}
           onClick={handleSave}
-          disabled={disableControls || loading || saving || !isDirty}
+          disabled={disableControls || loading || saving || !isDirty || diffModalOpen}
           title={t('config_management.save')}
           aria-label={t('config_management.save')}
         >
@@ -457,6 +511,14 @@ export function ConfigPage() {
       </Card>
 
       {typeof document !== 'undefined' ? createPortal(floatingActions, document.body) : null}
+      <DiffModal
+        open={diffModalOpen}
+        original={serverYaml}
+        modified={mergedYaml}
+        onConfirm={handleConfirmSave}
+        onCancel={() => setDiffModalOpen(false)}
+        loading={saving}
+      />
     </div>
   );
 }

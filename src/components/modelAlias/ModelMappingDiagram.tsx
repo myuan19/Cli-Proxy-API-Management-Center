@@ -33,7 +33,7 @@ export interface ModelMappingDiagramProps {
 }
 
 const PROVIDER_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', 
+  '#8b8680', '#10b981', '#f59e0b', '#c65746',
   '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'
 ];
 
@@ -285,7 +285,6 @@ export const ModelMappingDiagram = forwardRef<ModelMappingDiagramRef, ModelMappi
 
   useLayoutEffect(() => {
     // updateLines is called after layout is calculated, ensuring elements are in place.
-    updateLines();
     const raf = requestAnimationFrame(updateLines);
     window.addEventListener('resize', updateLines);
     return () => {
@@ -295,7 +294,6 @@ export const ModelMappingDiagram = forwardRef<ModelMappingDiagramRef, ModelMappi
   }, [updateLines, aliasNodes]);
 
   useLayoutEffect(() => {
-    updateLines();
     const raf = requestAnimationFrame(updateLines);
     return () => cancelAnimationFrame(raf);
   }, [providerGroupHeights, updateLines]);

@@ -17,23 +17,35 @@ export interface ApiKeyEntry {
   headers?: Record<string, string>;
 }
 
+export interface CloakConfig {
+  mode?: string;
+  strictMode?: boolean;
+  sensitiveWords?: string[];
+}
+
 export interface GeminiKeyConfig {
   apiKey: string;
+  priority?: number;
   prefix?: string;
   baseUrl?: string;
+  proxyUrl?: string;
+  models?: ModelAlias[];
   headers?: Record<string, string>;
   excludedModels?: string[];
 }
 
 export interface ProviderKeyConfig {
   apiKey: string;
+  priority?: number;
   prefix?: string;
   baseUrl?: string;
+  websockets?: boolean;
   proxyUrl?: string;
   proxyDns?: string;
   headers?: Record<string, string>;
   models?: ModelAlias[];
   excludedModels?: string[];
+  cloak?: CloakConfig;
 }
 
 export interface OpenAIProviderConfig {
@@ -45,5 +57,5 @@ export interface OpenAIProviderConfig {
   models?: ModelAlias[];
   priority?: number;
   testModel?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }

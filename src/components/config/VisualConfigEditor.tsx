@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { Select } from '@/components/ui/Select';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
-import { IconChevronDown } from '@/components/ui/icons';
 import { ConfigSection } from '@/components/config/ConfigSection';
+import { useNotificationStore } from '@/stores';
+import styles from './VisualConfigEditor.module.scss';
+import { copyToClipboard } from '@/utils/clipboard';
 import type {
   PayloadFilterRule,
   PayloadModelEntry,
@@ -78,118 +81,6 @@ function Divider() {
   return <div style={{ height: 1, background: 'var(--border-color)', margin: '16px 0' }} />;
 }
 
-type ToastSelectOption = { value: string; label: string };
-
-function ToastSelect({
-  value,
-  options,
-  disabled,
-  ariaLabel,
-  onChange,
-}: {
-  value: string;
-  options: ReadonlyArray<ToastSelectOption>;
-  disabled?: boolean;
-  ariaLabel: string;
-  onChange: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  const selectedOption = options.find((opt) => opt.value === value) ?? options[0];
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!containerRef.current) return;
-      if (!containerRef.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [open]);
-
-  return (
-    <div ref={containerRef} style={{ position: 'relative' }}>
-      <button
-        type="button"
-        className="input"
-        disabled={disabled}
-        onClick={() => setOpen((prev) => !prev)}
-        aria-label={ariaLabel}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          textAlign: 'left',
-          width: '100%',
-          appearance: 'none',
-        }}
-      >
-        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-          {selectedOption?.label ?? ''}
-        </span>
-        <IconChevronDown size={16} style={{ opacity: 0.6, flex: '0 0 auto' }} />
-      </button>
-
-      {open && !disabled && (
-        <div
-          role="listbox"
-          aria-label={ariaLabel}
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            left: 0,
-            right: 0,
-            zIndex: 1000,
-            background: 'var(--bg-primary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: 12,
-            padding: 6,
-            boxShadow: 'var(--shadow)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            maxHeight: 260,
-            overflowY: 'auto',
-          }}
-        >
-          {options.map((opt) => {
-            const active = opt.value === value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="option"
-                aria-selected={active}
-                onClick={() => {
-                  onChange(opt.value);
-                  setOpen(false);
-                }}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: active ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid var(--border-color)',
-                  background: active ? 'rgba(59, 130, 246, 0.10)' : 'var(--bg-primary)',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  fontWeight: 600,
-                }}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ApiKeysCardEditor({
   value,
   disabled,
@@ -200,6 +91,7 @@ function ApiKeysCardEditor({
   onChange: (nextValue: string) => void;
 }) {
   const { t } = useTranslation();
+  const { showNotification } = useNotificationStore();
   const apiKeys = useMemo(
     () =>
       value
@@ -213,6 +105,13 @@ function ApiKeysCardEditor({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [formError, setFormError] = useState('');
+
+  function generateSecureApiKey(): string {
+    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const array = new Uint8Array(17);
+    crypto.getRandomValues(array);
+    return 'sk-' + Array.from(array, (b) => charset[b % charset.length]).join('');
+  }
 
   const openAddModal = () => {
     setEditingIndex(null);
@@ -262,6 +161,19 @@ function ApiKeysCardEditor({
     closeModal();
   };
 
+  const handleCopy = async (apiKey: string) => {
+    const copied = await copyToClipboard(apiKey);
+    showNotification(
+      t(copied ? 'notification.link_copied' : 'notification.copy_failed'),
+      copied ? 'success' : 'error'
+    );
+  };
+
+  const handleGenerate = () => {
+    setInputValue(generateSecureApiKey());
+    setFormError('');
+  };
+
   return (
     <div className="form-group" style={{ marginBottom: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -293,6 +205,9 @@ function ApiKeysCardEditor({
                 <div className="item-subtitle">{maskApiKey(String(key || ''))}</div>
               </div>
               <div className="item-actions">
+                <Button variant="secondary" size="sm" onClick={() => handleCopy(key)} disabled={disabled}>
+                  {t('common.copy')}
+                </Button>
                 <Button variant="secondary" size="sm" onClick={() => openEditModal(index)} disabled={disabled}>
                   {t('config_management.visual.common.edit')}
                 </Button>
@@ -330,6 +245,18 @@ function ApiKeysCardEditor({
           disabled={disabled}
           error={formError || undefined}
           hint={t('config_management.visual.api_keys.input_hint')}
+          style={{ paddingRight: 148 }}
+          rightElement={
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleGenerate}
+              disabled={disabled}
+            >
+              {t('config_management.visual.api_keys.generate')}
+            </Button>
+          }
         />
       </Modal>
     </div>
@@ -358,7 +285,7 @@ function StringListEditor({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {items.map((item, index) => (
-        <div key={index} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div key={index} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             className="input"
             placeholder={placeholder}
@@ -394,6 +321,22 @@ function PayloadRulesEditor({
 }) {
   const { t } = useTranslation();
   const rules = value.length ? value : [];
+  const protocolOptions = useMemo(
+    () =>
+      VISUAL_CONFIG_PROTOCOL_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.labelKey, { defaultValue: option.defaultLabel }),
+      })),
+    [t]
+  );
+  const payloadValueTypeOptions = useMemo(
+    () =>
+      VISUAL_CONFIG_PAYLOAD_VALUE_TYPE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.labelKey, { defaultValue: option.defaultLabel }),
+      })),
+    [t]
+  );
 
   const addRule = () => onChange([...rules, { id: makeClientId(), models: [], params: [] }]);
   const removeRule = (ruleIndex: number) => onChange(rules.filter((_, i) => i !== ruleIndex));
@@ -471,7 +414,15 @@ function PayloadRulesEditor({
             gap: 12,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
             <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{t('config_management.visual.payload_rules.rule')} {ruleIndex + 1}</div>
             <Button variant="ghost" size="sm" onClick={() => removeRule(ruleIndex)} disabled={disabled}>
               {t('config_management.visual.common.delete')}
@@ -483,17 +434,15 @@ function PayloadRulesEditor({
             {(rule.models.length ? rule.models : []).map((model, modelIndex) => (
               <div
                 key={model.id}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: protocolFirst ? '160px 1fr auto' : '1fr 160px auto',
-                  gap: 8,
-                }}
+                className={[styles.payloadRuleModelRow, protocolFirst ? styles.payloadRuleModelRowProtocolFirst : '']
+                  .filter(Boolean)
+                  .join(' ')}
               >
                 {protocolFirst ? (
                   <>
-                    <ToastSelect
+                    <Select
                       value={model.protocol ?? ''}
-                      options={VISUAL_CONFIG_PROTOCOL_OPTIONS}
+                      options={protocolOptions}
                       disabled={disabled}
                       ariaLabel={t('config_management.visual.payload_rules.provider_type')}
                       onChange={(nextValue) =>
@@ -519,9 +468,9 @@ function PayloadRulesEditor({
                       onChange={(e) => updateModel(ruleIndex, modelIndex, { name: e.target.value })}
                       disabled={disabled}
                     />
-                    <ToastSelect
+                    <Select
                       value={model.protocol ?? ''}
-                      options={VISUAL_CONFIG_PROTOCOL_OPTIONS}
+                      options={protocolOptions}
                       disabled={disabled}
                       ariaLabel={t('config_management.visual.payload_rules.provider_type')}
                       onChange={(nextValue) =>
@@ -532,7 +481,13 @@ function PayloadRulesEditor({
                     />
                   </>
                 )}
-                <Button variant="ghost" size="sm" onClick={() => removeModel(ruleIndex, modelIndex)} disabled={disabled}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={styles.payloadRowActionButton}
+                  onClick={() => removeModel(ruleIndex, modelIndex)}
+                  disabled={disabled}
+                >
                   {t('config_management.visual.common.delete')}
                 </Button>
               </div>
@@ -547,7 +502,7 @@ function PayloadRulesEditor({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('config_management.visual.payload_rules.params')}</div>
             {(rule.params.length ? rule.params : []).map((param, paramIndex) => (
-              <div key={param.id} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 1fr auto', gap: 8 }}>
+              <div key={param.id} className={styles.payloadRuleParamRow}>
                 <input
                   className="input"
                   placeholder={t('config_management.visual.payload_rules.json_path')}
@@ -555,9 +510,9 @@ function PayloadRulesEditor({
                   onChange={(e) => updateParam(ruleIndex, paramIndex, { path: e.target.value })}
                   disabled={disabled}
                 />
-                <ToastSelect
+                <Select
                   value={param.valueType}
-                  options={VISUAL_CONFIG_PAYLOAD_VALUE_TYPE_OPTIONS}
+                  options={payloadValueTypeOptions}
                   disabled={disabled}
                   ariaLabel={t('config_management.visual.payload_rules.param_type')}
                   onChange={(nextValue) =>
@@ -571,7 +526,13 @@ function PayloadRulesEditor({
                   onChange={(e) => updateParam(ruleIndex, paramIndex, { value: e.target.value })}
                   disabled={disabled}
                 />
-                <Button variant="ghost" size="sm" onClick={() => removeParam(ruleIndex, paramIndex)} disabled={disabled}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={styles.payloadRowActionButton}
+                  onClick={() => removeParam(ruleIndex, paramIndex)}
+                  disabled={disabled}
+                >
                   {t('config_management.visual.common.delete')}
                 </Button>
               </div>
@@ -619,6 +580,14 @@ function PayloadFilterRulesEditor({
 }) {
   const { t } = useTranslation();
   const rules = value.length ? value : [];
+  const protocolOptions = useMemo(
+    () =>
+      VISUAL_CONFIG_PROTOCOL_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.labelKey, { defaultValue: option.defaultLabel }),
+      })),
+    [t]
+  );
 
   const addRule = () => onChange([...rules, { id: makeClientId(), models: [], params: [] }]);
   const removeRule = (ruleIndex: number) => onChange(rules.filter((_, i) => i !== ruleIndex));
@@ -658,7 +627,15 @@ function PayloadFilterRulesEditor({
             gap: 12,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
             <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{t('config_management.visual.payload_rules.rule')} {ruleIndex + 1}</div>
             <Button variant="ghost" size="sm" onClick={() => removeRule(ruleIndex)} disabled={disabled}>
               {t('config_management.visual.common.delete')}
@@ -668,7 +645,7 @@ function PayloadFilterRulesEditor({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('config_management.visual.payload_rules.models')}</div>
             {rule.models.map((model, modelIndex) => (
-              <div key={model.id} style={{ display: 'grid', gridTemplateColumns: '1fr 160px auto', gap: 8 }}>
+              <div key={model.id} className={styles.payloadFilterModelRow}>
                 <input
                   className="input"
                   placeholder={t('config_management.visual.payload_rules.model_name')}
@@ -676,9 +653,9 @@ function PayloadFilterRulesEditor({
                   onChange={(e) => updateModel(ruleIndex, modelIndex, { name: e.target.value })}
                   disabled={disabled}
                 />
-                <ToastSelect
+                <Select
                   value={model.protocol ?? ''}
-                  options={VISUAL_CONFIG_PROTOCOL_OPTIONS}
+                  options={protocolOptions}
                   disabled={disabled}
                   ariaLabel={t('config_management.visual.payload_rules.provider_type')}
                   onChange={(nextValue) =>
@@ -687,7 +664,13 @@ function PayloadFilterRulesEditor({
                     })
                   }
                 />
-                <Button variant="ghost" size="sm" onClick={() => removeModel(ruleIndex, modelIndex)} disabled={disabled}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={styles.payloadRowActionButton}
+                  onClick={() => removeModel(ruleIndex, modelIndex)}
+                  disabled={disabled}
+                >
                   {t('config_management.visual.common.delete')}
                 </Button>
               </div>
@@ -923,7 +906,7 @@ export function VisualConfigEditor({ values, disabled = false, onChange }: Visua
             />
             <div className="form-group">
               <label>{t('config_management.visual.sections.network.routing_strategy')}</label>
-              <ToastSelect
+              <Select
                 value={values.routingStrategy}
                 options={[
                   { value: 'round-robin', label: t('config_management.visual.sections.network.strategy_round_robin') },
