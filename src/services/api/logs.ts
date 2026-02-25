@@ -6,13 +6,16 @@ import { apiClient } from './client';
 import { LOGS_TIMEOUT_MS } from '@/utils/constants';
 
 export interface LogsQuery {
-  after?: number;
+  n?: number;
+  start?: number;
+  end?: number;
 }
 
 export interface LogsResponse {
   lines: string[];
-  'line-count': number;
-  'latest-timestamp': number;
+  start_line: number;
+  end_line: number;
+  total_lines: number;
 }
 
 export interface ErrorLogFile {

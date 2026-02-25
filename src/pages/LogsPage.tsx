@@ -35,11 +35,12 @@ type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
 type LogState = {
   buffer: string[];
-  visibleFrom: number;
+  startLine: number;
+  endLine: number;
+  totalLines: number;
 };
 
-// 初始只渲染最近 100 行，滚动到顶部再逐步加载更多（避免一次性渲染过多导致卡顿）
-const INITIAL_DISPLAY_LINES = 100;
+const INITIAL_LOAD_LINES = 300;
 const LOAD_MORE_LINES = 200;
 const MAX_BUFFER_LINES = 10000;
 const LOAD_MORE_THRESHOLD_PX = 72;
@@ -378,7 +379,7 @@ export function LogsPage() {
   const requestLogEnabled = useConfigStore((state) => state.config?.requestLog ?? false);
 
   const [activeTab, setActiveTab] = useState<TabType>('logs');
-  const [logState, setLogState] = useState<LogState>({ buffer: [], visibleFrom: 0 });
+  const [logState, setLogState] = useState<LogState>({ buffer: [], startLine: 0, endLine: 0, totalLines: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -402,8 +403,8 @@ export function LogsPage() {
     fired: boolean;
   } | null>(null);
 
-  // 保存最新时间戳用于增量获取
-  const latestTimestampRef = useRef<number>(0);
+  const endLineRef = useRef(0);
+  const loadingMoreRef = useRef(false);
 
   const disableControls = connectionStatus !== 'connected';
 
@@ -434,37 +435,35 @@ export function LogsPage() {
       pendingScrollToBottomRef.current = !incremental || isNearBottom(logViewerRef.current);
 
       const params =
-        incremental && latestTimestampRef.current > 0 ? { after: latestTimestampRef.current } : {};
+        incremental && endLineRef.current > 0
+          ? { start: endLineRef.current + 1 }
+          : { n: INITIAL_LOAD_LINES };
       const data = await logsApi.fetchLogs(params);
-
-      // 更新时间戳
-      if (data['latest-timestamp']) {
-        latestTimestampRef.current = data['latest-timestamp'];
-      }
-
       const newLines = Array.isArray(data.lines) ? data.lines : [];
 
       if (incremental && newLines.length > 0) {
-        // 增量更新：追加新日志并限制缓冲区大小（避免内存与渲染膨胀）
+        endLineRef.current = data.end_line;
         setLogState((prev) => {
-          const prevRenderedCount = prev.buffer.length - prev.visibleFrom;
           const combined = [...prev.buffer, ...newLines];
           const dropCount = Math.max(combined.length - MAX_BUFFER_LINES, 0);
           const buffer = dropCount > 0 ? combined.slice(dropCount) : combined;
-          let visibleFrom = Math.max(prev.visibleFrom - dropCount, 0);
-
-          // 若用户停留在底部（跟随最新日志），则保持“渲染窗口”大小不变，避免无限增长
-          if (pendingScrollToBottomRef.current) {
-            visibleFrom = Math.max(buffer.length - prevRenderedCount, 0);
-          }
-
-          return { buffer, visibleFrom };
+          return {
+            buffer,
+            startLine: prev.startLine + dropCount,
+            endLine: data.end_line,
+            totalLines: data.total_lines,
+          };
         });
-      } else if (!incremental) {
-        // 全量加载：默认只渲染最后 100 行，向上滚动再展开更多
-        const buffer = newLines.slice(-MAX_BUFFER_LINES);
-        const visibleFrom = Math.max(buffer.length - INITIAL_DISPLAY_LINES, 0);
-        setLogState({ buffer, visibleFrom });
+      } else if (incremental) {
+        setLogState((prev) => ({ ...prev, totalLines: data.total_lines }));
+      } else {
+        endLineRef.current = data.end_line;
+        setLogState({
+          buffer: newLines,
+          startLine: data.start_line,
+          endLine: data.end_line,
+          totalLines: data.total_lines,
+        });
       }
     } catch (err: unknown) {
       console.error('Failed to load logs:', err);
@@ -489,8 +488,8 @@ export function LogsPage() {
       onConfirm: async () => {
         try {
           await logsApi.clearLogs();
-          setLogState({ buffer: [], visibleFrom: 0 });
-          latestTimestampRef.current = 0;
+          setLogState({ buffer: [], startLine: 0, endLine: 0, totalLines: 0 });
+          endLineRef.current = 0;
           showNotification(t('logs.clear_success'), 'success');
         } catch (err: unknown) {
           const message = getErrorMessage(err);
@@ -561,7 +560,7 @@ export function LogsPage() {
 
   useEffect(() => {
     if (connectionStatus === 'connected') {
-      latestTimestampRef.current = 0;
+      endLineRef.current = 0;
       loadLogs(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -575,7 +574,7 @@ export function LogsPage() {
   }, [activeTab, connectionStatus, requestLogEnabled]);
 
   useEffect(() => {
-    if (!autoRefresh || connectionStatus !== 'connected') {
+    if (!autoRefresh || connectionStatus !== 'connected' || activeTab !== 'logs') {
       return;
     }
     const id = window.setInterval(() => {
@@ -583,7 +582,7 @@ export function LogsPage() {
     }, 8000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh, connectionStatus]);
+  }, [autoRefresh, connectionStatus, activeTab]);
 
   useEffect(() => {
     if (!pendingScrollToBottomRef.current) return;
@@ -592,16 +591,11 @@ export function LogsPage() {
 
     scrollToBottom();
     pendingScrollToBottomRef.current = false;
-  }, [loading, logState.buffer, logState.visibleFrom]);
-
-  const visibleLines = useMemo(
-    () => logState.buffer.slice(logState.visibleFrom),
-    [logState.buffer, logState.visibleFrom]
-  );
+  }, [loading, logState.buffer]);
 
   const trimmedSearchQuery = deferredSearchQuery.trim();
   const isSearching = trimmedSearchQuery.length > 0;
-  const baseLines = isSearching ? logState.buffer : visibleLines;
+  const baseLines = logState.buffer;
 
   const { filteredLines, removedCount } = useMemo(() => {
     let working = baseLines;
@@ -642,17 +636,26 @@ export function LogsPage() {
 
   const rawVisibleText = useMemo(() => filteredLines.join('\n'), [filteredLines]);
 
-  const canLoadMore = !isSearching && logState.visibleFrom > 0;
+  const canLoadMore = !isSearching && logState.startLine > 1;
 
-  const prependVisibleLines = useCallback(() => {
+  const loadOlderLines = useCallback(async () => {
+    if (loadingMoreRef.current) return;
+    if (isSearching) return;
+    if (logState.startLine <= 1) return;
+
     const node = logViewerRef.current;
     if (!node) return;
-    if (pendingPrependScrollRef.current) return;
-    if (isSearching) return;
 
-    setLogState((prev) => {
-      if (prev.visibleFrom <= 0) {
-        return prev;
+    loadingMoreRef.current = true;
+    const reqEnd = logState.startLine - 1;
+    const reqStart = Math.max(1, reqEnd - LOAD_MORE_LINES + 1);
+
+    try {
+      const data = await logsApi.fetchLogs({ start: reqStart, end: reqEnd });
+      const olderLines = Array.isArray(data.lines) ? data.lines : [];
+      if (olderLines.length === 0) {
+        loadingMoreRef.current = false;
+        return;
       }
 
       pendingPrependScrollRef.current = {
@@ -660,22 +663,29 @@ export function LogsPage() {
         scrollTop: node.scrollTop,
       };
 
-      return {
-        ...prev,
-        visibleFrom: Math.max(prev.visibleFrom - LOAD_MORE_LINES, 0),
-      };
-    });
-  }, [isSearching]);
+      setLogState((prev) => ({
+        buffer: [...olderLines, ...prev.buffer].slice(0, MAX_BUFFER_LINES),
+        startLine: data.start_line,
+        endLine: prev.endLine,
+        totalLines: data.total_lines,
+      }));
+    } catch {
+      // ignore
+    } finally {
+      loadingMoreRef.current = false;
+    }
+  }, [isSearching, logState.startLine]);
 
   const handleLogScroll = () => {
     const node = logViewerRef.current;
     if (!node) return;
     if (isSearching) return;
     if (!canLoadMore) return;
+    if (loadingMoreRef.current) return;
     if (pendingPrependScrollRef.current) return;
     if (node.scrollTop > LOAD_MORE_THRESHOLD_PX) return;
 
-    prependVisibleLines();
+    void loadOlderLines();
   };
 
   useLayoutEffect(() => {
@@ -686,20 +696,21 @@ export function LogsPage() {
     const delta = node.scrollHeight - pending.scrollHeight;
     node.scrollTop = pending.scrollTop + delta;
     pendingPrependScrollRef.current = null;
-  }, [logState.visibleFrom]);
+  }, [logState.startLine]);
 
   const tryAutoLoadMoreUntilScrollable = useCallback(() => {
     const node = logViewerRef.current;
     if (!node) return;
     if (!canLoadMore) return;
     if (isSearching) return;
+    if (loadingMoreRef.current) return;
     if (pendingPrependScrollRef.current) return;
 
     const hasVerticalOverflow = node.scrollHeight > node.clientHeight + 1;
     if (hasVerticalOverflow) return;
 
-    prependVisibleLines();
-  }, [canLoadMore, isSearching, prependVisibleLines]);
+    void loadOlderLines();
+  }, [canLoadMore, isSearching, loadOlderLines]);
 
   useEffect(() => {
     if (loading) return;
@@ -717,7 +728,7 @@ export function LogsPage() {
     tryAutoLoadMoreUntilScrollable,
     filteredLines.length,
     showRawLogs,
-    logState.visibleFrom,
+    logState.startLine,
   ]);
 
   useEffect(() => {
@@ -976,7 +987,7 @@ export function LogsPage() {
                         </span>
                       )}
                       <span className={styles.loadMoreCount}>
-                        {t('logs.hidden_lines', { count: logState.visibleFrom })}
+                        {t('logs.hidden_lines', { count: logState.startLine - 1 })}
                       </span>
                     </div>
                   </div>
@@ -994,7 +1005,7 @@ export function LogsPage() {
                         rowClassNames.push(styles.rowError);
                       return (
                         <div
-                          key={`${logState.visibleFrom + index}-${line.raw}`}
+                          key={`${logState.startLine + index}-${line.raw}`}
                           className={rowClassNames.join(' ')}
                           onDoubleClick={() => {
                             void copyLogLine(line.raw);

@@ -14,6 +14,7 @@ import type {
   DetailedRequestSummary,
   DetailedAttempt,
   DetailedRequestsQuery,
+  RecordOrCached,
 } from '@/services/api/detailedRequests';
 import styles from './DetailedRequestsTab.module.scss';
 
@@ -658,8 +659,9 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
   const [showRetriesBlock, setShowRetriesBlock] = useState(false);
   const [showSimulated, setShowSimulated] = useState(false);
   const autoRefreshRef = useRef(true);
-  const isFirstLoad = useRef(true);
+  const requestVersion = useRef(0);
   const lastIds = useRef('');
+  const recordCache = useRef(new Map<string, DetailedRequestSummary>());
 
   // Keep ref in sync
   useEffect(() => {
@@ -686,7 +688,9 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
   }, []);
 
   const loadRecords = useCallback(async (currentOffset: number, silent = false) => {
-    if (!silent && isFirstLoad.current) {
+    const version = ++requestVersion.current;
+
+    if (!silent) {
       setLoading(true);
     }
 
@@ -698,7 +702,6 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
     if (statusFilter) params.status_code = statusFilter;
     if (showSimulated) params.include_simulated = true;
 
-    // Rolling time window for presets
     if (timePreset > 0) {
       params.after = Math.floor((Date.now() - timePreset * 3600000) / 1000);
     } else {
@@ -706,25 +709,45 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
     }
     if (timeBefore) params.before = Math.floor(new Date(timeBefore).getTime() / 1000);
 
+    const cachedIds = Array.from(recordCache.current.keys());
+    if (cachedIds.length > 0) {
+      params.known_ids = cachedIds.join(',');
+    }
+
     try {
       const data = await detailedRequestsApi.listRecords(params);
-      const newRecords = data.records || [];
-      const newIds = newRecords.map((r) => `${r.id}:${r.status_code}`).join(',');
+      if (requestVersion.current !== version) return;
 
-      if (newIds !== lastIds.current || isFirstLoad.current) {
-        setRecords(newRecords);
+      const rawRecords: RecordOrCached[] = data.records || [];
+      const resolved: DetailedRequestSummary[] = [];
+      for (const entry of rawRecords) {
+        if ('cached' in entry && entry.cached) {
+          const cached = recordCache.current.get(entry.id);
+          if (cached) {
+            resolved.push(cached);
+          }
+        } else {
+          const summary = entry as DetailedRequestSummary;
+          recordCache.current.set(summary.id, summary);
+          resolved.push(summary);
+        }
+      }
+
+      const newIds = resolved.map((r) => `${r.id}:${r.status_code}`).join(',');
+      if (newIds !== lastIds.current) {
+        setRecords(resolved);
         lastIds.current = newIds;
       }
 
       setTotal(data.total || 0);
       setApiKeys(data.api_keys || []);
     } catch {
-      if (isFirstLoad.current) {
-        setRecords([]);
-      }
+      if (requestVersion.current !== version) return;
+      setRecords([]);
     } finally {
-      setLoading(false);
-      isFirstLoad.current = false;
+      if (requestVersion.current === version) {
+        setLoading(false);
+      }
     }
 
     loadStatus();
@@ -732,9 +755,8 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
 
   /* ---- Effects ---- */
 
-  // Initial load
+  // Load on filter/offset change
   useEffect(() => {
-    isFirstLoad.current = true;
     lastIds.current = '';
     setOffset(0);
     loadRecords(0);
@@ -804,6 +826,7 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
         try {
           await detailedRequestsApi.deleteAll();
           lastIds.current = '';
+          recordCache.current.clear();
           setRecords([]);
           setTotal(0);
           showNotification(t('detailed_requests.delete_all_success'), 'success');
@@ -828,18 +851,27 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
   };
 
   const handleStatusFilter = (status: string) => {
+    ++requestVersion.current;
     setStatusFilter(status);
     setOffset(0);
     lastIds.current = '';
+    recordCache.current.clear();
+    setLoading(true);
+    setRecords([]);
   };
 
   const handleApiKeyChange = (value: string) => {
+    ++requestVersion.current;
     setApiKeyFilter(value);
     setOffset(0);
     lastIds.current = '';
+    recordCache.current.clear();
+    setLoading(true);
+    setRecords([]);
   };
 
   const handleTimePreset = (hours: number) => {
+    ++requestVersion.current;
     setTimePreset(hours);
     if (hours === 0) {
       setTimeAfter('');
@@ -850,12 +882,19 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
     }
     setOffset(0);
     lastIds.current = '';
+    recordCache.current.clear();
+    setLoading(true);
+    setRecords([]);
   };
 
   const handleCustomTime = () => {
+    ++requestVersion.current;
     setTimePreset(-1); // custom
     setOffset(0);
     lastIds.current = '';
+    recordCache.current.clear();
+    setLoading(true);
+    setRecords([]);
   };
 
   const handleRefresh = () => {
@@ -865,8 +904,11 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
 
   const handlePage = (dir: number) => {
     const newOffset = Math.max(0, offset + dir * PAGE_SIZE);
+    ++requestVersion.current;
     setOffset(newOffset);
     lastIds.current = '';
+    setLoading(true);
+    setRecords([]);
     loadRecords(newOffset);
   };
 

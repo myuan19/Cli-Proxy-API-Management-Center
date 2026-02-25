@@ -55,8 +55,15 @@ export interface DetailedRequestSummary {
   attempt_count: number;
 }
 
+export interface CachedRecordStub {
+  id: string;
+  cached: true;
+}
+
+export type RecordOrCached = DetailedRequestSummary | CachedRecordStub;
+
 export interface DetailedRequestsListResponse {
-  records: DetailedRequestSummary[];
+  records: RecordOrCached[];
   total: number;
   offset: number;
   limit: number;
@@ -81,6 +88,7 @@ export interface DetailedRequestsQuery {
   after?: number;
   before?: number;
   include_simulated?: boolean;
+  known_ids?: string;
 }
 
 export const detailedRequestsApi = {

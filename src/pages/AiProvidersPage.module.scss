@@ -182,7 +182,7 @@
   flex-shrink: 0;
 }
 
-// 单个模型标签
+// 单个模型标签（可点击检查）
 .modelTag {
   display: inline-flex;
   align-items: center;
@@ -192,12 +192,19 @@
   border: 1px solid var(--border-secondary);
   border-radius: 14px;
   padding: 4px 10px;
+  font: inherit;
   font-size: 12px;
+  cursor: pointer;
   transition: all 0.15s ease;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: var(--bg-tertiary);
     border-color: var(--primary-color);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.85;
   }
 }
 
@@ -678,4 +685,365 @@
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+// ═══════════════════════════════════════════
+// OpenAI Edit Form
+// ═══════════════════════════════════════════
+
+.openaiEditForm {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg;
+}
+
+.sectionHint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+// ─── Model Config Section ──────────────────
+
+.modelConfigSection {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  padding: $spacing-md;
+  border: 1px solid var(--border-secondary);
+  border-radius: $radius-lg;
+  background: var(--bg-secondary, #{$gray-50});
+}
+
+.modelConfigHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+}
+
+.modelConfigTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modelConfigToolbar {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.modelInputList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modelInputRow {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.modelInputField {
+  flex: 1;
+  min-width: 0;
+}
+
+.modelRowRemoveButton {
+  flex-shrink: 0;
+}
+
+// ─── Model Test Panel ──────────────────────
+
+.modelTestPanel {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  padding-top: $spacing-sm;
+  border-top: 1px solid var(--border-secondary);
+  margin-top: $spacing-xs;
+}
+
+.modelTestMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.modelTestLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modelTestHint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.modelTestControls {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}
+
+.openaiTestSelect {
+  flex: 1;
+  min-width: 160px;
+  max-width: 320px;
+}
+
+.modelTestAllButton {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+// ─── Key Entries Section ───────────────────
+
+.keyEntriesSection {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  padding: $spacing-md;
+  border: 1px solid var(--border-secondary);
+  border-radius: $radius-lg;
+  background: var(--bg-secondary, #{$gray-50});
+}
+
+.keyEntriesHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: $spacing-xs;
+}
+
+.keyEntriesTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.keyEntriesHint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.keyEntriesList {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.keyEntriesToolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.keyEntriesCount {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.addKeyButton {
+  flex-shrink: 0;
+}
+
+// ─── Key Table ─────────────────────────────
+
+.keyTableShell {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-secondary);
+  border-radius: $radius-md;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.keyTableHeader {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  padding: $spacing-sm $spacing-md;
+  background: var(--bg-tertiary, #{$gray-100});
+  border-bottom: 1px solid var(--border-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.keyTableRow {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  padding: $spacing-sm $spacing-md;
+  border-bottom: 1px solid var(--border-secondary);
+  transition: background $transition-fast;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: var(--bg-secondary, #{$gray-50});
+  }
+}
+
+.keyTableColIndex {
+  width: 28px;
+  flex-shrink: 0;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.keyTableColStatus {
+  width: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.keyTableColKey {
+  flex: 3;
+  min-width: 0;
+}
+
+.keyTableColProxy {
+  flex: 2;
+  min-width: 0;
+}
+
+.keyTableColAction {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.keyTableInput {
+  width: 100%;
+  font-size: 13px;
+}
+
+// ─── Status Icon Spin ──────────────────────
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.statusIconSpin {
+  animation: spin 1s linear infinite;
+}
+
+// ─── Dark Theme ────────────────────────────
+
+:global([data-theme='dark']) {
+  .modelConfigSection,
+  .keyEntriesSection {
+    background: var(--bg-tertiary);
+    border-color: var(--border-primary);
+  }
+
+  .keyTableShell {
+    background: var(--bg-secondary);
+    border-color: var(--border-primary);
+  }
+
+  .keyTableHeader {
+    background: var(--bg-tertiary);
+    border-color: var(--border-primary);
+  }
+
+  .keyTableRow {
+    border-color: var(--border-primary);
+
+    &:hover {
+      background: var(--bg-tertiary);
+    }
+  }
+}
+
+// ─── Model Discovery (OpenAI /models) ──────
+
+.openaiModelsContent {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.openaiModelsEndpointSection {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.openaiModelsEndpointLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.openaiModelsEndpointControls {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.openaiModelsEndpointInput {
+  flex: 1;
+  min-width: 0;
+}
+
+// ─── Responsive ────────────────────────────
+
+@include mobile {
+  .keyTableHeader {
+    display: none;
+  }
+
+  .keyTableRow {
+    flex-wrap: wrap;
+    padding: $spacing-sm;
+    gap: 6px;
+  }
+
+  .keyTableColIndex {
+    width: 20px;
+  }
+
+  .keyTableColStatus {
+    width: 24px;
+  }
+
+  .keyTableColKey {
+    flex-basis: calc(100% - 56px - #{$spacing-sm} * 2);
+  }
+
+  .keyTableColProxy {
+    flex-basis: 100%;
+    padding-left: 48px;
+  }
+
+  .keyTableColAction {
+    flex-basis: 100%;
+    padding-left: 48px;
+    justify-content: flex-start;
+  }
 }

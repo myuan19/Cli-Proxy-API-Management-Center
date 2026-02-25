@@ -155,7 +155,6 @@
 .cardListBox {
   flex: 1 1 0%;
   min-height: 0;
-  max-height: min(70vh, 560px);
   overflow: hidden;
   border: 1px solid var(--border-color);
   border-radius: $radius-lg;
@@ -678,7 +677,9 @@
   justify-content: center;
   gap: $spacing-sm;
   align-items: center;
-  padding: $spacing-sm 0;
+  padding: $spacing-md 0 $spacing-sm;
+  margin-top: auto;
+  flex-shrink: 0;
 }
 
 .paginationInfo {

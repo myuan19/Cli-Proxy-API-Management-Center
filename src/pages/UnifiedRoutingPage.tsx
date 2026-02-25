@@ -420,6 +420,20 @@ export function UnifiedRoutingPage() {
     setTargetModalOpen(true);
   };
 
+  // Direct pipeline mutation (drag reorder, cleanup, batch add)
+  const handlePipelineChange = async (routeId: string, newPipeline: Pipeline) => {
+    const prev = routePipelinesRef.current[routeId];
+    routePipelinesRef.current[routeId] = newPipeline;
+    setRoutePipelines({ ...routePipelinesRef.current });
+    try {
+      await updatePipeline(routeId, newPipeline);
+    } catch (error) {
+      routePipelinesRef.current[routeId] = prev;
+      setRoutePipelines({ ...routePipelinesRef.current });
+      showNotification(getErrorMessage(error), 'error');
+    }
+  };
+
   // Refresh handler - fully reset state and reload
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -488,7 +502,13 @@ export function UnifiedRoutingPage() {
 
       {/* Credentials Overview */}
       <section className={styles.section}>
-        <CredentialsOverview credentials={credentials} loading={loading} />
+        <CredentialsOverview
+          credentials={credentials}
+          loading={loading}
+          routes={routes}
+          routePipelines={routePipelines}
+          onPipelineChange={handlePipelineChange}
+        />
       </section>
 
       {/* Routes Section */}
@@ -532,6 +552,7 @@ export function UnifiedRoutingPage() {
                   onDeleteLayer={handleDeleteLayer}
                   onAddLayer={handleAddLayer}
                   onSelect={handleConfigurePipeline}
+                  onPipelineChange={handlePipelineChange}
                 />
               ))}
             </div>

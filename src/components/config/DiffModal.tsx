@@ -1,10 +1,19 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { Text } from '@codemirror/state';
 import { Chunk } from '@codemirror/merge';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import styles from './DiffModal.module.scss';
+
+function normalizeYaml(raw: string): string {
+  try {
+    return stringifyYaml(parseYaml(raw), { lineWidth: 0 }).trimEnd();
+  } catch {
+    return raw;
+  }
+}
 
 type DiffModalProps = {
   open: boolean;
@@ -87,8 +96,8 @@ export function DiffModal({
   const { t } = useTranslation();
 
   const diffCards = useMemo<DiffChunkCard[]>(() => {
-    const currentDoc = Text.of(original.split('\n'));
-    const modifiedDoc = Text.of(modified.split('\n'));
+    const currentDoc = Text.of(normalizeYaml(original).split('\n'));
+    const modifiedDoc = Text.of(normalizeYaml(modified).split('\n'));
     const chunks = Chunk.build(currentDoc, modifiedDoc);
 
     return chunks.map((chunk, index) => {

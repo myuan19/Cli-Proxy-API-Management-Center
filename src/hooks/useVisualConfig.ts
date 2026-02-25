@@ -76,9 +76,9 @@ function setStringInDoc(doc: YamlDocument, path: YamlPath, value: unknown): void
   const trimmed = safe.trim();
   if (trimmed !== '') {
     doc.setIn(path, safe);
-    return;
+  } else if (docHas(doc, path)) {
+    doc.setIn(path, '');
   }
-  if (docHas(doc, path)) doc.deleteIn(path);
 }
 
 function setIntFromStringInDoc(doc: YamlDocument, path: YamlPath, value: unknown): void {

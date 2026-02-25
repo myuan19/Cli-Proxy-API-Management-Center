@@ -55,18 +55,15 @@ export function GeminiSection({
 
   const [healthResults, setHealthResults] = useState<Record<string, ModelHealthResult>>({});
   const [checkingAll, setCheckingAll] = useState(false);
+  const isAnyChecking = checkingAll;
 
-  const handleCheckAll = async () => {
-    if (checkingAll) return;
-    setCheckingAll(true);
-    setHealthResults({});
-
+  const runHealthCheck = async (opts: { model?: string }) => {
     let healthy = 0;
     let unhealthy = 0;
 
     try {
       await providersApi.checkProvidersHealthStream(
-        { type: 'gemini-api-key', timeout: 30 },
+        { type: 'gemini-api-key', timeout: 30, ...opts },
         {
           onResult: (item) => {
             const key = `${item.prefix || item.name}::${item.model_tested || ''}`;
@@ -82,15 +79,15 @@ export function GeminiSection({
             }));
           },
           onDone: () => {
-            setCheckingAll(false);
             const total = healthy + unhealthy;
-            if (total === 0) return;
-            if (unhealthy === 0) {
-              showNotification(t('ai_providers.health_check_all_healthy', { count: total, defaultValue: `全部 ${total} 个模型健康` }), 'success');
-            } else if (healthy === 0) {
-              showNotification(t('ai_providers.health_check_all_unhealthy', { count: total, defaultValue: `全部 ${total} 个模型异常` }), 'error');
-            } else {
-              showNotification(t('ai_providers.health_check_result', { healthy, unhealthy, defaultValue: `${healthy} 个健康，${unhealthy} 个异常` }), 'warning');
+            if (total > 0 && !opts.model) {
+              if (unhealthy === 0) {
+                showNotification(t('ai_providers.health_check_all_healthy', { count: total, defaultValue: `全部 ${total} 个模型健康` }), 'success');
+              } else if (healthy === 0) {
+                showNotification(t('ai_providers.health_check_all_unhealthy', { count: total, defaultValue: `全部 ${total} 个模型异常` }), 'error');
+              } else {
+                showNotification(t('ai_providers.health_check_result', { healthy, unhealthy, defaultValue: `${healthy} 个健康，${unhealthy} 个异常` }), 'warning');
+              }
             }
           },
         }
@@ -101,6 +98,25 @@ export function GeminiSection({
     } finally {
       setCheckingAll(false);
     }
+  };
+
+  const handleCheckAll = async () => {
+    if (isAnyChecking) return;
+    setCheckingAll(true);
+    setHealthResults({});
+    await runHealthCheck({});
+  };
+
+  const handleCheckModel = async (modelName: string) => {
+    if (isAnyChecking) return;
+    setHealthResults((prev) => {
+      const next = { ...prev };
+      configs.forEach((cfg) => {
+        next[`${cfg.prefix || 'gemini'}::${modelName}`] = { status: 'checking' };
+      });
+      return next;
+    });
+    await runHealthCheck({ model: modelName });
   };
 
   const getModelResult = (cfg: GeminiKeyConfig, modelName: string): ModelHealthResult | undefined => {
@@ -141,7 +157,7 @@ export function GeminiSection({
               variant="secondary"
               size="sm"
               onClick={() => void handleCheckAll()}
-              disabled={actionsDisabled || checkingAll || configs.length === 0}
+              disabled={actionsDisabled || isAnyChecking || configs.length === 0}
             >
               {checkingAll ? <LoadingSpinner size={14} /> : t('ai_providers.health_check_all', { defaultValue: '全部检查' })}
             </Button>
@@ -231,22 +247,26 @@ export function GeminiSection({
                       const healthResult = getModelResult(item, model.name);
                       const showChecking = checkingAll && !healthResult;
                       return (
-                        <span
+                        <button
+                          type="button"
                           key={model.name}
                           className={`${styles.modelTag} ${
-                            healthResult
+                            healthResult && healthResult.status !== 'checking'
                               ? healthResult.status === 'healthy'
                                 ? styles.modelTagHealthy
                                 : styles.modelTagUnhealthy
                               : ''
                           }`}
+                          onClick={() => void handleCheckModel(model.name)}
+                          disabled={isAnyChecking || healthResult?.status === 'checking'}
+                          title={t('ai_providers.health_check_model', { defaultValue: '点击检查此模型' })}
                         >
                           <span className={styles.modelName}>{model.name}</span>
                           {model.alias && model.alias !== model.name && (
                             <span className={styles.modelAlias}>{model.alias}</span>
                           )}
-                          {showChecking && <LoadingSpinner size={12} />}
-                          {healthResult && (
+                          {(showChecking || healthResult?.status === 'checking') && <LoadingSpinner size={12} />}
+                          {healthResult && healthResult.status !== 'checking' && (
                             <span
                               className={
                                 healthResult.status === 'healthy'
@@ -264,7 +284,7 @@ export function GeminiSection({
                                   : '✗'}
                             </span>
                           )}
-                        </span>
+                        </button>
                       );
                     })}
                   </div>

@@ -432,7 +432,12 @@
     "openai_test_all_hint": "Проверить состояние подключения для всех ключей",
     "openai_test_all_success": "Все {{count}} ключей прошли тест",
     "openai_test_all_failed": "Все {{count}} ключей не прошли тест",
-    "openai_test_all_partial": "Тест завершен: {{success}} прошло, {{failed}} не прошло"
+    "openai_test_all_partial": "Тест завершен: {{success}} прошло, {{failed}} не прошло",
+    "gemini_delete_title": "Удалить ключ Gemini",
+    "openai_delete_title": "Удалить провайдера OpenAI",
+    "vertex_delete_title": "Удалить конфигурацию Vertex",
+    "ampcode_clear_upstream_api_key_title": "Очистить официальный ключ",
+    "ampcode_mappings_overwrite_title": "Перезаписать маппинги"
   },
   "auth_files": {
     "title": "Управление файлами авторизации",
@@ -1074,11 +1079,11 @@
     "search_prev": "Назад",
     "search_next": "Вперёд",
     "diff": {
-      "title": "Обзор изменений",
+      "title": "Предпросмотр изменений",
       "current": "Текущая",
       "modified": "Изменённая",
-      "confirm": "Подтвердить",
-      "no_changes": "Изменений не обнаружено"
+      "confirm": "Подтвердить сохранение",
+      "no_changes": "Нет изменений"
     },
     "tabs": {
       "visual": "Визуальный редактор",

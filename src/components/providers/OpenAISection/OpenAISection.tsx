@@ -53,18 +53,21 @@ export function OpenAISection({
 
   const [healthResults, setHealthResults] = useState<Record<string, ModelHealthResult>>({});
   const [checkingAll, setCheckingAll] = useState(false);
+  const [checkingCards, setCheckingCards] = useState<Record<string, boolean>>({});
 
-  const handleCheckAll = async () => {
-    if (checkingAll) return;
-    setCheckingAll(true);
-    setHealthResults({});
+  const isAnyChecking = checkingAll || Object.values(checkingCards).some(Boolean);
+
+  const runHealthCheck = async (opts: { name?: string; model?: string }) => {
+    if (opts.name && !opts.model) {
+      setCheckingCards((prev) => ({ ...prev, [opts.name!]: true }));
+    }
 
     let healthy = 0;
     let unhealthy = 0;
 
     try {
       await providersApi.checkProvidersHealthStream(
-        { type: 'openai-compatibility', timeout: 30 },
+        { type: 'openai-compatibility', timeout: 30, ...opts },
         {
           onResult: (item) => {
             const key = `${item.prefix || item.name}::${item.model_tested || ''}`;
@@ -85,9 +88,8 @@ export function OpenAISection({
             }));
           },
           onDone: () => {
-            setCheckingAll(false);
             const total = healthy + unhealthy;
-            if (total > 0) {
+            if (total > 0 && !opts.model) {
               if (unhealthy === 0) {
                 showNotification(
                   t('ai_providers.health_check_all_healthy', {
@@ -125,8 +127,30 @@ export function OpenAISection({
         'error'
       );
     } finally {
-      setCheckingAll(false);
+      if (!opts.name) setCheckingAll(false);
+      if (opts.name && !opts.model) setCheckingCards((prev) => ({ ...prev, [opts.name!]: false }));
     }
+  };
+
+  const handleCheckAll = async () => {
+    if (isAnyChecking) return;
+    setCheckingAll(true);
+    setHealthResults({});
+    await runHealthCheck({});
+  };
+
+  const handleCheckCard = async (providerName: string) => {
+    if (isAnyChecking) return;
+    await runHealthCheck({ name: providerName });
+  };
+
+  const handleCheckModel = async (providerName: string, modelName: string) => {
+    if (isAnyChecking) return;
+    setHealthResults((prev) => ({
+      ...prev,
+      [`${providerName}::${modelName}`]: { status: 'checking' },
+    }));
+    await runHealthCheck({ name: providerName, model: modelName });
   };
 
   const getModelResult = (
@@ -198,6 +222,21 @@ export function OpenAISection({
           onEdit={onEdit}
           onDelete={onDelete}
           actionsDisabled={actionsDisabled}
+          renderExtraActions={(item) => (
+            <Button
+              variant="secondary"
+              size="sm"
+              className={styles.providerHealthCheckButton}
+              onClick={() => void handleCheckCard(item.name)}
+              disabled={actionsDisabled || isAnyChecking}
+            >
+              {checkingCards[item.name] ? (
+                <LoadingSpinner size={14} />
+              ) : (
+                t('ai_providers.health_check_card', { defaultValue: '检查' })
+              )}
+            </Button>
+          )}
           renderContent={(item) => {
             const headerEntries = Object.entries(item.headers || {});
             const apiKeyEntries = item.apiKeyEntries || [];
@@ -257,12 +296,14 @@ export function OpenAISection({
                   <div className={styles.modelTagList}>
                     {item.models.map((model) => {
                       const healthResult = getModelResult(item, model.name);
-                      const showChecking = checkingAll && !healthResult;
+                      const showChecking = (checkingAll || checkingCards[item.name]) && !healthResult;
+                      const isModelChecking = healthResult?.status === 'checking';
                       return (
-                        <span
+                        <button
+                          type="button"
                           key={model.name}
                           className={`${styles.modelTag} ${
-                            healthResult
+                            healthResult && healthResult.status !== 'checking'
                               ? healthResult.status === 'healthy'
                                 ? styles.modelTagHealthy
                                 : healthResult.status === 'timeout'
@@ -270,13 +311,16 @@ export function OpenAISection({
                                   : styles.modelTagUnhealthy
                               : ''
                           }`}
+                          onClick={() => void handleCheckModel(item.name, model.name)}
+                          disabled={isAnyChecking || isModelChecking}
+                          title={t('ai_providers.health_check_model', { defaultValue: '点击检查此模型' })}
                         >
                           <span className={styles.modelName}>{model.name}</span>
                           {model.alias && model.alias !== model.name && (
                             <span className={styles.modelAlias}>{model.alias}</span>
                           )}
-                          {showChecking && <LoadingSpinner size={12} />}
-                          {healthResult && (
+                          {(showChecking || isModelChecking) && <LoadingSpinner size={12} />}
+                          {healthResult && healthResult.status !== 'checking' && (
                             <span
                               className={
                                 healthResult.status === 'healthy'
@@ -296,7 +340,7 @@ export function OpenAISection({
                                   : '✗'}
                             </span>
                           )}
-                        </span>
+                        </button>
                       );
                     })}
                   </div>

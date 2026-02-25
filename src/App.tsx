@@ -1,5 +1,11 @@
 import { useEffect } from 'react';
-import { HashRouter, Route, Routes } from 'react-router-dom';
+import {
+  createHashRouter,
+  createRoutesFromElements,
+  Outlet,
+  Route,
+  RouterProvider,
+} from 'react-router-dom';
 import { LoginPage } from '@/pages/LoginPage';
 import { DetailedRequestsPage } from '@/pages/DetailedRequestsPage';
 import { NotificationContainer } from '@/components/common/NotificationContainer';
@@ -7,6 +13,40 @@ import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ProtectedRoute } from '@/router/ProtectedRoute';
 import { useLanguageStore, useThemeStore } from '@/stores';
+
+function AppShell() {
+  return (
+    <>
+      <NotificationContainer />
+      <ConfirmationModal />
+      <Outlet />
+    </>
+  );
+}
+
+const router = createHashRouter(
+  createRoutesFromElements(
+    <Route element={<AppShell />}>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/detailed-requests"
+        element={
+          <ProtectedRoute>
+            <DetailedRequestsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/*"
+        element={
+          <ProtectedRoute>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      />
+    </Route>
+  )
+);
 
 function App() {
   const initializeTheme = useThemeStore((state) => state.initializeTheme);
@@ -21,37 +61,13 @@ function App() {
   useEffect(() => {
     setLanguage(language);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 仅用于首屏同步 i18n 语言
+  }, []);
 
   useEffect(() => {
     document.documentElement.lang = language;
   }, [language]);
 
-  return (
-    <HashRouter>
-      <NotificationContainer />
-      <ConfirmationModal />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/detailed-requests"
-          element={
-            <ProtectedRoute>
-              <DetailedRequestsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/*"
-          element={
-            <ProtectedRoute>
-              <MainLayout />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
-    </HashRouter>
-  );
+  return <RouterProvider router={router} />;
 }
 
 export default App;

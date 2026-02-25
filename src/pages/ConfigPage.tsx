@@ -5,7 +5,7 @@ import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { yaml } from '@codemirror/lang-yaml';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { keymap } from '@codemirror/view';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -126,7 +126,8 @@ export function ConfigPage() {
       const nextMergedYaml = applyVisualChangesToYaml(content);
       const latestServerYaml = await configFileApi.fetchConfigYaml();
 
-      if (latestServerYaml === nextMergedYaml) {
+      const normalize = (s: string) => { try { return stringifyYaml(parseYaml(s), { lineWidth: 0 }); } catch { return s; } };
+      if (normalize(latestServerYaml) === normalize(nextMergedYaml)) {
         setDirty(false);
         setContent(latestServerYaml);
         setServerYaml(latestServerYaml);
