@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import iconOpenaiLight from '@/assets/icons/openai-light.svg';
 import iconOpenaiDark from '@/assets/icons/openai-dark.svg';
@@ -17,6 +18,7 @@ import { useNotificationStore } from '@/stores';
 import styles from '@/pages/AiProvidersPage.module.scss';
 import { ProviderList } from '../ProviderList';
 import { ProviderStatusBar } from '../ProviderStatusBar';
+import { hasDisableAllModelsRule } from '../utils';
 
 interface ModelHealthResult {
   status: 'healthy' | 'unhealthy' | 'timeout' | 'checking';
@@ -34,6 +36,7 @@ interface OpenAISectionProps {
   onAdd: () => void;
   onEdit: (index: number) => void;
   onDelete: (index: number) => void;
+  onToggle: (index: number, enabled: boolean) => void;
 }
 
 export function OpenAISection({
@@ -46,10 +49,12 @@ export function OpenAISection({
   onAdd,
   onEdit,
   onDelete,
+  onToggle,
 }: OpenAISectionProps) {
   const { t } = useTranslation();
   const { showNotification } = useNotificationStore();
   const actionsDisabled = disableControls || loading || isSwitching;
+  const toggleDisabled = actionsDisabled;
 
   const [healthResults, setHealthResults] = useState<Record<string, ModelHealthResult>>({});
   const [checkingAll, setCheckingAll] = useState(false);
@@ -199,7 +204,7 @@ export function OpenAISection({
               variant="secondary"
               size="sm"
               onClick={() => void handleCheckAll()}
-              disabled={actionsDisabled || checkingAll || configs.length === 0}
+              disabled={actionsDisabled || checkingAll || configs.length === 0 || configs.every((c) => hasDisableAllModelsRule(c.excludedModels))}
             >
               {checkingAll ? (
                 <LoadingSpinner size={14} />
@@ -221,23 +226,20 @@ export function OpenAISection({
           emptyDescription={t('ai_providers.openai_empty_desc')}
           onEdit={onEdit}
           onDelete={onDelete}
+          onHealthCheck={(index) => void handleCheckCard(configs[index].name)}
+          healthCheckLoading={(item) => !!checkingCards[item.name]}
           actionsDisabled={actionsDisabled}
-          renderExtraActions={(item) => (
-            <Button
-              variant="secondary"
-              size="sm"
-              className={styles.providerHealthCheckButton}
-              onClick={() => void handleCheckCard(item.name)}
-              disabled={actionsDisabled || isAnyChecking}
-            >
-              {checkingCards[item.name] ? (
-                <LoadingSpinner size={14} />
-              ) : (
-                t('ai_providers.health_check_card', { defaultValue: '检查' })
-              )}
-            </Button>
+          getRowDisabled={(item) => hasDisableAllModelsRule(item.excludedModels)}
+          renderExtraActions={(item, index) => (
+            <ToggleSwitch
+              label={t('ai_providers.config_toggle_label')}
+              checked={!hasDisableAllModelsRule(item.excludedModels)}
+              disabled={toggleDisabled}
+              onChange={(value) => void onToggle(index, value)}
+            />
           )}
           renderContent={(item) => {
+            const configDisabled = hasDisableAllModelsRule(item.excludedModels);
             const headerEntries = Object.entries(item.headers || {});
             const apiKeyEntries = item.apiKeyEntries || [];
             const statusData = statusBarCache.get(item.name) || calculateStatusBarData([]);
@@ -312,7 +314,7 @@ export function OpenAISection({
                               : ''
                           }`}
                           onClick={() => void handleCheckModel(item.name, model.name)}
-                          disabled={isAnyChecking || isModelChecking}
+                          disabled={isAnyChecking || isModelChecking || configDisabled}
                           title={t('ai_providers.health_check_model', { defaultValue: '点击检查此模型' })}
                         >
                           <span className={styles.modelName}>{model.name}</span>

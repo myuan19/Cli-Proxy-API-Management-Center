@@ -15,7 +15,7 @@ import {
   withDisableAllModelsRule,
   withoutDisableAllModelsRule,
 } from '@/components/providers/utils';
-import { ampcodeApi, providersApi } from '@/services/api';
+import { ampcodeApi, authFilesApi, providersApi } from '@/services/api';
 import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
 import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
 import styles from './AiProvidersPage.module.scss';
@@ -84,6 +84,12 @@ export function AiProvidersPage() {
       }
 
       const data = configResult.value;
+      console.debug('[AiProviders:loadConfigs] loaded config:', {
+        geminiCount: (data?.geminiApiKeys || []).length,
+        geminiExcluded: (data?.geminiApiKeys || []).map((c: any, i: number) => ({ i, excluded: c?.excludedModels })),
+        openaiCount: (data?.openaiCompatibility || []).length,
+        openaiExcluded: (data?.openaiCompatibility || []).map((c: any, i: number) => ({ i, name: c?.name, excluded: c?.excludedModels })),
+      });
       setGeminiKeys(data?.geminiApiKeys || []);
       setCodexConfigs(data?.codexApiKeys || []);
       setClaudeConfigs(data?.claudeApiKeys || []);
@@ -136,9 +142,22 @@ export function AiProvidersPage() {
     [navigate]
   );
 
+  const cleanupAuthEntry = (authName: string) => {
+    console.debug('[AiProviders:cleanupAuthEntry] authName=', authName, 'calling setStatus(disabled=true)');
+    authFilesApi.setStatus(authName, true).then(() => {
+      console.debug('[AiProviders:cleanupAuthEntry] setStatus(disabled=true) success for', authName);
+    }).catch((err) => {
+      console.warn('[AiProviders:cleanupAuthEntry] setStatus failed for', authName, err);
+    });
+  };
+
   const deleteGemini = async (index: number) => {
     const entry = geminiKeys[index];
-    if (!entry) return;
+    if (!entry) {
+      console.warn('[AiProviders:deleteGemini] no entry at index', index);
+      return;
+    }
+    console.debug('[AiProviders:deleteGemini] index=', index, 'prefix=', entry.prefix, 'apiKey=', entry.apiKey?.slice(0, 8) + '...');
     showConfirmation({
       title: t('ai_providers.gemini_delete_title', { defaultValue: 'Delete Gemini Key' }),
       message: t('ai_providers.gemini_delete_confirm'),
@@ -146,7 +165,11 @@ export function AiProvidersPage() {
       confirmText: t('common.confirm'),
       onConfirm: async () => {
         try {
+          console.debug('[AiProviders:deleteGemini] onConfirm: calling deleteGeminiKey and cleanupAuthEntry');
           await providersApi.deleteGeminiKey(entry.apiKey);
+          const authId = entry.prefix || entry.apiKey;
+          console.debug('[AiProviders:deleteGemini] cleanupAuthEntry authId=', authId);
+          cleanupAuthEntry(authId);
           const next = geminiKeys.filter((_, idx) => idx !== index);
           setGeminiKeys(next);
           updateConfigValue('gemini-api-key', next);
@@ -161,14 +184,27 @@ export function AiProvidersPage() {
   };
 
   const setConfigEnabled = async (
-    provider: 'gemini' | 'codex' | 'claude',
+    provider: 'gemini' | 'codex' | 'claude' | 'openai' | 'vertex',
     index: number,
     enabled: boolean
   ) => {
+    const syncAuthDisabled = (authName: string, disabled: boolean) => {
+      console.debug('[AiProviders:syncAuthDisabled] authName=', authName, 'disabled=', disabled);
+      authFilesApi.setStatus(authName, disabled).then(() => {
+        console.debug('[AiProviders:syncAuthDisabled] setStatus success for', authName, 'disabled=', disabled);
+      }).catch((err) => {
+        console.warn('[AiProviders:syncAuthDisabled] setStatus failed for', authName, 'disabled=', disabled, err);
+      });
+    };
+
     if (provider === 'gemini') {
       const current = geminiKeys[index];
-      if (!current) return;
+      if (!current) {
+        console.warn('[AiProviders:setConfigEnabled] gemini: no config at index', index);
+        return;
+      }
 
+      console.debug('[AiProviders:setConfigEnabled] gemini index=', index, 'enabled=', enabled, 'prefix=', current.prefix, 'apiKey=', current.apiKey?.slice(0, 8) + '...');
       const switchingKey = `${provider}:${current.apiKey}`;
       setConfigSwitchingKey(switchingKey);
 
@@ -184,7 +220,11 @@ export function AiProvidersPage() {
       clearCache('gemini-api-key');
 
       try {
+        console.debug('[AiProviders:setConfigEnabled] gemini: saving nextList excludedModels=', nextList.map((c, i) => ({ i, excluded: c.excludedModels })));
         await providersApi.saveGeminiKeys(nextList);
+        const authId = current.prefix || current.apiKey;
+        console.debug('[AiProviders:setConfigEnabled] gemini: syncAuthDisabled authId=', authId, 'disabled=', !enabled);
+        syncAuthDisabled(authId, !enabled);
         showNotification(
           enabled ? t('notification.config_enabled') : t('notification.config_disabled'),
           'success'
@@ -201,7 +241,51 @@ export function AiProvidersPage() {
       return;
     }
 
-    const source = provider === 'codex' ? codexConfigs : claudeConfigs;
+    if (provider === 'openai') {
+      const current = openaiProviders[index];
+      if (!current) {
+        console.warn('[AiProviders:setConfigEnabled] openai: no config at index', index);
+        return;
+      }
+
+      console.debug('[AiProviders:setConfigEnabled] openai index=', index, 'enabled=', enabled, 'name=', current.name, 'prefix=', current.prefix);
+      const switchingKey = `openai:${current.name}`;
+      setConfigSwitchingKey(switchingKey);
+
+      const previousList = openaiProviders;
+      const nextExcluded = enabled
+        ? withoutDisableAllModelsRule(current.excludedModels)
+        : withDisableAllModelsRule(current.excludedModels);
+      const nextItem: OpenAIProviderConfig = { ...current, excludedModels: nextExcluded };
+      const nextList = previousList.map((item, idx) => (idx === index ? nextItem : item));
+
+      setOpenaiProviders(nextList);
+      updateConfigValue('openai-compatibility', nextList);
+      clearCache('openai-compatibility');
+
+      try {
+        console.debug('[AiProviders:setConfigEnabled] openai: saving nextList excludedModels=', nextList.map((c, i) => ({ i, name: c.name, excluded: c.excludedModels })));
+        await providersApi.saveOpenAIProviders(nextList);
+        const authId = current.prefix || current.name;
+        console.debug('[AiProviders:setConfigEnabled] openai: syncAuthDisabled authId=', authId, 'disabled=', !enabled);
+        syncAuthDisabled(authId, !enabled);
+        showNotification(
+          enabled ? t('notification.config_enabled') : t('notification.config_disabled'),
+          'success'
+        );
+      } catch (err: unknown) {
+        const message = getErrorMessage(err);
+        setOpenaiProviders(previousList);
+        updateConfigValue('openai-compatibility', previousList);
+        clearCache('openai-compatibility');
+        showNotification(`${t('notification.update_failed')}: ${message}`, 'error');
+      } finally {
+        setConfigSwitchingKey(null);
+      }
+      return;
+    }
+
+    const source = provider === 'codex' ? codexConfigs : provider === 'vertex' ? vertexConfigs : claudeConfigs;
     const current = source[index];
     if (!current) return;
 
@@ -215,37 +299,34 @@ export function AiProvidersPage() {
     const nextItem: ProviderKeyConfig = { ...current, excludedModels: nextExcluded };
     const nextList = previousList.map((item, idx) => (idx === index ? nextItem : item));
 
-    if (provider === 'codex') {
-      setCodexConfigs(nextList);
-      updateConfigValue('codex-api-key', nextList);
-      clearCache('codex-api-key');
-    } else {
-      setClaudeConfigs(nextList);
-      updateConfigValue('claude-api-key', nextList);
-      clearCache('claude-api-key');
-    }
+    const setters: Record<string, () => void> = {
+      codex: () => { setCodexConfigs(nextList); updateConfigValue('codex-api-key', nextList); clearCache('codex-api-key'); },
+      claude: () => { setClaudeConfigs(nextList); updateConfigValue('claude-api-key', nextList); clearCache('claude-api-key'); },
+      vertex: () => { setVertexConfigs(nextList); updateConfigValue('vertex-api-key', nextList); clearCache('vertex-api-key'); },
+    };
+    const rollers: Record<string, () => void> = {
+      codex: () => { setCodexConfigs(previousList); updateConfigValue('codex-api-key', previousList); clearCache('codex-api-key'); },
+      claude: () => { setClaudeConfigs(previousList); updateConfigValue('claude-api-key', previousList); clearCache('claude-api-key'); },
+      vertex: () => { setVertexConfigs(previousList); updateConfigValue('vertex-api-key', previousList); clearCache('vertex-api-key'); },
+    };
+    const savers: Record<string, () => Promise<unknown>> = {
+      codex: () => providersApi.saveCodexConfigs(nextList),
+      claude: () => providersApi.saveClaudeConfigs(nextList),
+      vertex: () => providersApi.saveVertexConfigs(nextList),
+    };
+
+    setters[provider]();
 
     try {
-      if (provider === 'codex') {
-        await providersApi.saveCodexConfigs(nextList);
-      } else {
-        await providersApi.saveClaudeConfigs(nextList);
-      }
+      await savers[provider]();
+      syncAuthDisabled(current.prefix || current.apiKey, !enabled);
       showNotification(
         enabled ? t('notification.config_enabled') : t('notification.config_disabled'),
         'success'
       );
     } catch (err: unknown) {
       const message = getErrorMessage(err);
-      if (provider === 'codex') {
-        setCodexConfigs(previousList);
-        updateConfigValue('codex-api-key', previousList);
-        clearCache('codex-api-key');
-      } else {
-        setClaudeConfigs(previousList);
-        updateConfigValue('claude-api-key', previousList);
-        clearCache('claude-api-key');
-      }
+      rollers[provider]();
       showNotification(`${t('notification.update_failed')}: ${message}`, 'error');
     } finally {
       setConfigSwitchingKey(null);
@@ -265,6 +346,7 @@ export function AiProvidersPage() {
         try {
           if (type === 'codex') {
             await providersApi.deleteCodexConfig(entry.apiKey);
+            cleanupAuthEntry(entry.prefix || entry.apiKey);
             const next = codexConfigs.filter((_, idx) => idx !== index);
             setCodexConfigs(next);
             updateConfigValue('codex-api-key', next);
@@ -272,6 +354,7 @@ export function AiProvidersPage() {
             showNotification(t('notification.codex_config_deleted'), 'success');
           } else {
             await providersApi.deleteClaudeConfig(entry.apiKey);
+            cleanupAuthEntry(entry.prefix || entry.apiKey);
             const next = claudeConfigs.filter((_, idx) => idx !== index);
             setClaudeConfigs(next);
             updateConfigValue('claude-api-key', next);
@@ -297,6 +380,7 @@ export function AiProvidersPage() {
       onConfirm: async () => {
         try {
           await providersApi.deleteVertexConfig(entry.apiKey);
+          cleanupAuthEntry(entry.prefix || entry.apiKey);
           const next = vertexConfigs.filter((_, idx) => idx !== index);
           setVertexConfigs(next);
           updateConfigValue('vertex-api-key', next);
@@ -312,7 +396,11 @@ export function AiProvidersPage() {
 
   const deleteOpenai = async (index: number) => {
     const entry = openaiProviders[index];
-    if (!entry) return;
+    if (!entry) {
+      console.warn('[AiProviders:deleteOpenai] no entry at index', index);
+      return;
+    }
+    console.debug('[AiProviders:deleteOpenai] index=', index, 'name=', entry.name, 'prefix=', entry.prefix);
     showConfirmation({
       title: t('ai_providers.openai_delete_title', { defaultValue: 'Delete OpenAI Provider' }),
       message: t('ai_providers.openai_delete_confirm'),
@@ -320,7 +408,11 @@ export function AiProvidersPage() {
       confirmText: t('common.confirm'),
       onConfirm: async () => {
         try {
+          console.debug('[AiProviders:deleteOpenai] onConfirm: calling deleteOpenAIProvider and cleanupAuthEntry');
           await providersApi.deleteOpenAIProvider(entry.name);
+          const authId = entry.prefix || entry.name;
+          console.debug('[AiProviders:deleteOpenai] cleanupAuthEntry authId=', authId);
+          cleanupAuthEntry(authId);
           const next = openaiProviders.filter((_, idx) => idx !== index);
           setOpenaiProviders(next);
           updateConfigValue('openai-compatibility', next);
@@ -395,6 +487,7 @@ export function AiProvidersPage() {
             onAdd={() => openEditor('/ai-providers/vertex/new')}
             onEdit={(index) => openEditor(`/ai-providers/vertex/${index}`)}
             onDelete={deleteVertex}
+            onToggle={(index, enabled) => void setConfigEnabled('vertex', index, enabled)}
           />
         </div>
 
@@ -419,6 +512,7 @@ export function AiProvidersPage() {
             onAdd={() => openEditor('/ai-providers/openai/new')}
             onEdit={(index) => openEditor(`/ai-providers/openai/${index}`)}
             onDelete={deleteOpenai}
+            onToggle={(index, enabled) => void setConfigEnabled('openai', index, enabled)}
           />
         </div>
       </div>

@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { unifiedRoutingApi } from '@/services/api/unifiedRouting';
+import { getCredentialDisplayLabel } from '@/utils/unifiedRouting';
 import type { Route, Pipeline, RouteState, CredentialInfo, Target, HealthResult, Layer } from '@/types';
 import styles from './RouteCard.module.scss';
 
@@ -518,22 +519,25 @@ export function RouteCard({
     }
   }, [isDraggingTarget, isDraggingLayer, cleanupDrag]);
 
-  // Clean up not-found targets from a layer
+  const isNotFoundCredential = useCallback((credentialId: string) => {
+    return getCredentialStatus(credentialId) === 'not_found';
+  }, [credentials]);
+
   const handleCleanupLayer = useCallback((layerLevel: number) => {
     if (!pipeline || !onPipelineChange) return;
     const newLayers = pipeline.layers.map(layer => {
       if (layer.level !== layerLevel) return layer;
       return {
         ...layer,
-        targets: layer.targets.filter(t => getCredentialStatus(t.credential_id) !== 'not_found'),
+        targets: layer.targets.filter(t => !isNotFoundCredential(t.credential_id)),
       };
     });
     onPipelineChange(route.id, { ...pipeline, layers: newLayers });
-  }, [pipeline, onPipelineChange, route.id, credentials]);
+  }, [pipeline, onPipelineChange, route.id, isNotFoundCredential]);
 
   const hasNotFoundTargets = useCallback((layer: Layer) => {
-    return layer.targets.some(t => getCredentialStatus(t.credential_id) === 'not_found');
-  }, [credentials]);
+    return layer.targets.some(t => isNotFoundCredential(t.credential_id));
+  }, [isNotFoundCredential]);
 
   // Which layer level is being dragged?
   const draggedLayerLevel = useMemo(() => {
@@ -690,7 +694,7 @@ export function RouteCard({
                             onClick={() => handleCleanupLayer(layer.level)}
                             disabled={disabled}
                           >
-                            {t('unified_routing.cleanup_deleted', { defaultValue: '清除已删除' })}
+                            {t('unified_routing.cleanup_invalid', { defaultValue: '清除无效' })}
                           </Button>
                         )}
                         <Button
@@ -805,7 +809,7 @@ export function RouteCard({
                                 </span>
                                 /
                                 <span className={styles.credential}>
-                                  {cred?.label || target.credential_id}
+                                  {cred ? getCredentialDisplayLabel(cred) : target.credential_id}
                                 </span>
                                 /
                                 <span className={styles.model}>{target.model}</span>

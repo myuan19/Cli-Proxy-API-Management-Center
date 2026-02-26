@@ -1,22 +1,20 @@
 /**
  * Credentials Overview Component
- * Left (2/3): providers with credential cards (2×3 grid, paginated).
- * Right (1/3): models panel — custom models (input + list) separated by divider from fetched models.
- * "添加模型" global toggle controls selection mode.
- * "检查凭证" button: concurrency-10 fetch models per credential, green/red status.
- * Non-adding mode: clicking a credential card opens its models modal.
- * Adding mode: bot icon button on each card opens models modal.
- * Re-fetching models preserves previously selected models by migrating them to custom list.
- * Switching provider clears model selection.
+ * Two-column layout rendered directly (no Card wrapper).
+ * Left: providers with credential cards (2×3 grid, paginated), top-right has check/batch/toggle buttons.
+ * Right: models panel — manual input + model list (each with × to remove).
+ * Clicking a credential opens a modal showing its models with "+" buttons to add to the right panel.
+ * "添加模型" global toggle controls credential selection mode for batch-add.
  */
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { IconBot } from '@/components/ui/icons';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { unifiedRoutingApi } from '@/services/api/unifiedRouting';
+import { getCredentialDisplayLabel } from '@/utils/unifiedRouting';
 import type { CredentialInfo, Route, Pipeline, Target, Layer, ModelInfo } from '@/types';
 import styles from './CredentialsOverview.module.scss';
 
@@ -29,29 +27,34 @@ interface CredentialsOverviewProps {
   routes?: Route[];
   routePipelines?: Record<string, Pipeline | null>;
   onPipelineChange?: (routeId: string, pipeline: Pipeline) => void;
+  addingModelsMode?: boolean;
+  onValidCombinationCountChange?: (count: number) => void;
+  onSelectedCountsChange?: (creds: number, models: number) => void;
+  onCheckingAllChange?: (checking: boolean) => void;
 }
 
-interface ProviderModelsState {
-  models: { credentialId: string; modelId: string; modelName: string }[];
-  loading: boolean;
-  loaded: boolean;
+export interface CredentialsOverviewRef {
+  openBatchAddModal: () => void;
+  checkAllCredentials: () => void;
 }
 
-export function CredentialsOverview({
+export const CredentialsOverview = forwardRef<CredentialsOverviewRef, CredentialsOverviewProps>(function CredentialsOverview({
   credentials,
   loading,
   routes,
   routePipelines,
   onPipelineChange,
-}: CredentialsOverviewProps) {
+  addingModelsMode: addingModelsModeProp = false,
+  onValidCombinationCountChange,
+  onSelectedCountsChange,
+  onCheckingAllChange,
+}, ref) {
   const { t } = useTranslation();
 
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
   const [credentialPage, setCredentialPage] = useState<Record<string, number>>({});
-  const [addingModelsMode, setAddingModelsMode] = useState(false);
+  const addingModelsMode = addingModelsModeProp;
   const [selectedCredentialIds, setSelectedCredentialIds] = useState<Set<string>>(new Set());
-  const [providerModels, setProviderModels] = useState<Record<string, ProviderModelsState>>({});
-  const [modelsPanelProvider, setModelsPanelProvider] = useState<string | null>(null);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
   const [batchAddModalOpen, setBatchAddModalOpen] = useState(false);
   const [batchAddTarget, setBatchAddTarget] = useState<{ routeId: string; layerLevel: number } | null>(null);
@@ -60,6 +63,7 @@ export function CredentialsOverview({
 
   const [credentialCheckStatus, setCredentialCheckStatus] = useState<Record<string, 'success' | 'error'>>({});
   const [checkingCredentials, setCheckingCredentials] = useState(false);
+  const [checkingProvider, setCheckingProvider] = useState<string | null>(null);
 
   const [credentialModalCred, setCredentialModalCred] = useState<CredentialInfo | null>(null);
   const [credentialModalModels, setCredentialModalModels] = useState<ModelInfo[] | null>(null);
@@ -68,7 +72,6 @@ export function CredentialsOverview({
   const groupedCredentials = useMemo(() => {
     const groups: Record<string, CredentialInfo[]> = {};
     for (const cred of credentials) {
-      if (cred.status === 'disabled') continue;
       const key = cred.provider;
       if (!groups[key]) groups[key] = [];
       groups[key].push(cred);
@@ -77,6 +80,15 @@ export function CredentialsOverview({
   }, [credentials]);
 
   const providers = useMemo(() => Object.keys(groupedCredentials).sort(), [groupedCredentials]);
+
+  // 默认展开所有 provider 分组（仅首次加载时，不覆盖用户手动折叠）
+  const [hasInitializedExpanded, setHasInitializedExpanded] = useState(false);
+  useEffect(() => {
+    if (providers.length > 0 && !hasInitializedExpanded) {
+      setExpandedProviders(new Set(providers));
+      setHasInitializedExpanded(true);
+    }
+  }, [providers, hasInitializedExpanded]);
 
   // ========== Check credentials (10 concurrency) ==========
   const handleCheckAllCredentials = useCallback(async () => {
@@ -105,6 +117,31 @@ export function CredentialsOverview({
     setCheckingCredentials(false);
   }, [credentials, checkingCredentials]);
 
+  const handleCheckProviderCredentials = useCallback(async (provider: string) => {
+    if (checkingCredentials || checkingProvider) return;
+    const creds = (groupedCredentials[provider] ?? []).filter(c => c.status !== 'disabled');
+    if (creds.length === 0) return;
+    setCheckingProvider(provider);
+    let idx = 0;
+    const run = async () => {
+      while (idx < creds.length) {
+        const cred = creds[idx++];
+        try {
+          const c = await unifiedRoutingApi.getCredential(cred.id);
+          setCredentialCheckStatus(prev => ({
+            ...prev,
+            [cred.id]: (c.models?.length ?? 0) > 0 ? 'success' : 'error',
+          }));
+        } catch {
+          setCredentialCheckStatus(prev => ({ ...prev, [cred.id]: 'error' }));
+        }
+      }
+    };
+    const workers = Array.from({ length: Math.min(CHECK_CONCURRENCY, creds.length) }, () => run());
+    await Promise.all(workers);
+    setCheckingProvider(null);
+  }, [groupedCredentials, checkingCredentials, checkingProvider]);
+
   // ========== Credential models modal ==========
   const openCredentialModelsModal = useCallback((cred: CredentialInfo) => {
     setCredentialModalCred(cred);
@@ -126,69 +163,11 @@ export function CredentialsOverview({
       .finally(() => setCredentialModalLoading(false));
   }, [credentialModalCred]);
 
-  // ========== Fetch models for provider ==========
-  const fetchModelsForProvider = useCallback(async (provider: string) => {
-    const creds = groupedCredentials[provider];
-    if (!creds?.length) return;
+  const handleAddModelFromModal = useCallback((modelId: string) => {
+    setCustomModels(prev => prev.includes(modelId) ? prev : [...prev, modelId]);
+  }, []);
 
-    setProviderModels(prev => ({
-      ...prev,
-      [provider]: { ...(prev[provider] || { models: [], loaded: false }), loading: true },
-    }));
-
-    try {
-      const list = await unifiedRoutingApi.listCredentials({ provider });
-      const allModels: { credentialId: string; modelId: string; modelName: string }[] = [];
-      const seen = new Set<string>();
-      for (const cred of list.credentials.filter(c => c.status !== 'disabled')) {
-        for (const m of cred.models) {
-          const key = `${cred.id}:${m.id}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            allModels.push({ credentialId: cred.id, modelId: m.id, modelName: m.name });
-          }
-        }
-      }
-
-      const newFetchedIds = new Set(allModels.map(m => m.modelId));
-
-      // Re-fetch or switch: migrate selected models that disappear from panel to custom
-      if (modelsPanelProvider != null) {
-        const oldState = providerModels[modelsPanelProvider];
-        const oldFetchedIds = new Set((oldState?.models ?? []).map(m => m.modelId));
-        const selectedCleared: string[] = [];
-        for (const oid of oldFetchedIds) {
-          if (!newFetchedIds.has(oid) && selectedModelIds.has(oid)) {
-            selectedCleared.push(oid);
-          }
-        }
-        if (selectedCleared.length > 0) {
-          setCustomModels(prev => {
-            const next = [...prev];
-            for (const mid of selectedCleared) {
-              if (!next.includes(mid)) next.push(mid);
-            }
-            return next;
-          });
-        }
-      }
-
-      setProviderModels(prev => ({
-        ...prev,
-        [provider]: { models: allModels, loading: false, loaded: true },
-      }));
-      if (allModels.length > 0) setModelsPanelProvider(provider);
-
-      // Remove from custom any model that now appears in fetched (deduplicate at source)
-      setCustomModels(prev => prev.filter(id => !newFetchedIds.has(id)));
-    } catch {
-      setProviderModels(prev => ({
-        ...prev,
-        [provider]: { ...(prev[provider] || { models: [], loaded: false }), loading: false, loaded: true },
-      }));
-    }
-  }, [groupedCredentials, modelsPanelProvider, selectedModelIds, providerModels]);
-
+  // ========== Provider toggle / pagination ==========
   const toggleProvider = useCallback((provider: string) => {
     setExpandedProviders(prev => {
       const next = new Set(prev);
@@ -211,6 +190,7 @@ export function CredentialsOverview({
     [groupedCredentials]
   );
 
+  // ========== Selection ==========
   const toggleCredentialSelection = useCallback((id: string) => {
     setSelectedCredentialIds(prev => {
       const next = new Set(prev);
@@ -252,6 +232,21 @@ export function CredentialsOverview({
     [groupedCredentials, selectedCredentialIds]
   );
 
+  const checkCountsForProvider = useCallback(
+    (provider: string): { success: number; error: number } => {
+      const list = groupedCredentials[provider] ?? [];
+      let success = 0;
+      let error = 0;
+      for (const c of list) {
+        const s = credentialCheckStatus[c.id];
+        if (s === 'success') success++;
+        else if (s === 'error') error++;
+      }
+      return { success, error };
+    },
+    [groupedCredentials, credentialCheckStatus]
+  );
+
   const toggleModelSelection = useCallback((modelId: string) => {
     setSelectedModelIds(prev => {
       const next = new Set(prev);
@@ -261,27 +256,27 @@ export function CredentialsOverview({
     });
   }, []);
 
-  // ========== Right panel models: separate custom and fetched ==========
-  const fetchedModels = useMemo(() => {
-    if (!modelsPanelProvider) return [];
-    const state = providerModels[modelsPanelProvider];
-    if (!state?.models?.length) return [];
-    const byId = new Map<string, string>();
-    for (const m of state.models) {
-      if (!byId.has(m.modelId)) byId.set(m.modelId, m.modelName);
-    }
-    return Array.from(byId.entries()).map(([id, name]) => ({ id, name }));
-  }, [modelsPanelProvider, providerModels]);
-
-  const customModelsFiltered = useMemo(() => {
-    const fetchedIds = new Set(fetchedModels.map(m => m.id));
-    return customModels.filter(cm => !fetchedIds.has(cm));
-  }, [customModels, fetchedModels]);
-
   const validCombinationCount = useMemo(() => {
     if (selectedCredentialIds.size === 0 || selectedModelIds.size === 0) return 0;
     return selectedCredentialIds.size * selectedModelIds.size;
   }, [selectedCredentialIds, selectedModelIds]);
+
+  useEffect(() => {
+    onValidCombinationCountChange?.(validCombinationCount);
+  }, [validCombinationCount, onValidCombinationCountChange]);
+
+  useEffect(() => {
+    onSelectedCountsChange?.(selectedCredentialIds.size, selectedModelIds.size);
+  }, [selectedCredentialIds.size, selectedModelIds.size, onSelectedCountsChange]);
+
+  useEffect(() => {
+    onCheckingAllChange?.(checkingCredentials);
+  }, [checkingCredentials, onCheckingAllChange]);
+
+  useImperativeHandle(ref, () => ({
+    openBatchAddModal: () => setBatchAddModalOpen(true),
+    checkAllCredentials: handleCheckAllCredentials,
+  }), [handleCheckAllCredentials]);
 
   const handleAddCustomModel = useCallback(() => {
     const trimmed = customModelInput.trim();
@@ -290,11 +285,7 @@ export function CredentialsOverview({
     setCustomModelInput('');
   }, [customModelInput]);
 
-  const handleBatchAdd = useCallback(() => {
-    if (validCombinationCount === 0) return;
-    setBatchAddModalOpen(true);
-  }, [validCombinationCount]);
-
+  // ========== Batch add ==========
   const handleBatchAddConfirm = useCallback(async () => {
     if (!batchAddTarget || !onPipelineChange || !routePipelines) return;
     const newTargets: Target[] = [];
@@ -330,7 +321,6 @@ export function CredentialsOverview({
     return routes.map(r => ({ route: r, pipeline: routePipelines[r.id] }));
   }, [routes, routePipelines]);
 
-  // ========== Batch add modal: selected credentials grouped by provider ==========
   const selectedCredsByProvider = useMemo(() => {
     const result: Record<string, CredentialInfo[]> = {};
     for (const cred of credentials) {
@@ -342,81 +332,21 @@ export function CredentialsOverview({
     return result;
   }, [credentials, selectedCredentialIds]);
 
-  const selectedModelsList = useMemo(() => {
-    return [...selectedModelIds];
-  }, [selectedModelIds]);
+  const selectedModelsList = useMemo(() => [...selectedModelIds], [selectedModelIds]);
 
-  // ========== Title summary ==========
-  const totalCredCount = credentials.filter(c => c.status !== 'disabled').length;
-  const titleSummary = useMemo(() => {
-    const base = t('unified_routing.credentials_overview');
-    if (!addingModelsMode) return base;
-    return (
-      <>
-        {base}
-        <span className={styles.titleCredHint}>
-          {totalCredCount} {t('unified_routing.credentials_count', { defaultValue: '个凭证' })}
-        </span>
-      </>
-    );
-  }, [t, addingModelsMode, totalCredCount]);
-
+  // ========== Loading / Empty ==========
   if (loading) {
-    return (
-      <Card title={t('unified_routing.credentials_overview')} className={styles.card}>
-        <div className={styles.loading}>{t('common.loading')}</div>
-      </Card>
-    );
+    return <div className={styles.statusMsg}>{t('common.loading')}</div>;
   }
 
   if (credentials.length === 0) {
-    return (
-      <Card title={t('unified_routing.credentials_overview')} className={styles.card}>
-        <div className={styles.empty}>{t('unified_routing.no_credentials')}</div>
-      </Card>
-    );
+    return <div className={styles.statusMsg}>{t('unified_routing.no_credentials')}</div>;
   }
 
   return (
-    <Card
-      title={titleSummary}
-      className={styles.card}
-      extra={
-        <div className={styles.topActions}>
-          {addingModelsMode && (
-            <span className={styles.topCounts}>
-              {selectedCredentialIds.size} | {selectedModelIds.size}
-            </span>
-          )}
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleCheckAllCredentials}
-            disabled={checkingCredentials}
-          >
-            {checkingCredentials
-              ? t('common.loading')
-              : t('unified_routing.check_credentials', { defaultValue: '检查凭证' })}
-          </Button>
-          {addingModelsMode && validCombinationCount > 0 && (
-            <Button variant="primary" size="sm" onClick={handleBatchAdd}>
-              {t('unified_routing.batch_add', { defaultValue: '批量添加' })} ({validCombinationCount})
-            </Button>
-          )}
-          <button
-            type="button"
-            className={`${styles.addModelsToggle} ${addingModelsMode ? styles.addModelsToggleActive : ''}`}
-            onClick={() => setAddingModelsMode(prev => !prev)}
-          >
-            <span className={styles.addModelsCheck}>{addingModelsMode ? '\u2713' : ''}</span>
-            {addingModelsMode
-              ? t('unified_routing.cancel', { defaultValue: '取消' })
-              : t('unified_routing.add_models', { defaultValue: '添加模型' })}
-          </button>
-        </div>
-      }
-    >
+    <>
       <div className={styles.overviewLayout}>
+        {/* ===== Left: Credentials ===== */}
         <div className={styles.overviewLeft}>
           <div className={styles.providerList}>
             {providers.map(provider => {
@@ -425,9 +355,12 @@ export function CredentialsOverview({
               const page = credentialPage[provider] ?? 0;
               const totalPages = totalCredPages(provider);
               const pageCreds = credsForProviderPage(provider, page);
-              const modelsState = providerModels[provider];
               const isAllSelected = isProviderAllSelected(provider);
               const selCount = selectedCountForProvider(provider);
+              const checkCounts = checkCountsForProvider(provider);
+              const hasCheckResults = checkCounts.success > 0 || checkCounts.error > 0;
+              // 仅当前 provider 在检查时，其禁用凭证才显示黄框（避免点单渠道 check 时其他渠道的禁用也变黄）
+              const isInCheckMode = checkingCredentials || (checkingProvider !== null && checkingProvider === provider);
 
               return (
                 <div key={provider} className={styles.providerGroup}>
@@ -442,17 +375,34 @@ export function CredentialsOverview({
                         </span>
                       )}
                     </span>
+                    {hasCheckResults && (
+                      <span className={styles.providerCheckResults}>
+                        {checkCounts.success > 0 && (
+                          <span className={styles.providerCheckBadgeSuccess} title="成功获取模型的凭证数">
+                            {checkCounts.success}
+                          </span>
+                        )}
+                        {checkCounts.error > 0 && (
+                          <span className={styles.providerCheckBadgeError} title="获取模型失败的凭证数">
+                            {checkCounts.error}
+                          </span>
+                        )}
+                      </span>
+                    )}
                     <div className={styles.providerActions} onClick={e => e.stopPropagation()}>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => fetchModelsForProvider(provider)}
-                        disabled={modelsState?.loading}
+                      <button
+                        type="button"
+                        className={styles.providerCheckBtn}
+                        onClick={() => handleCheckProviderCredentials(provider)}
+                        disabled={checkingCredentials || checkingProvider !== null}
+                        title={t('unified_routing.check_provider_credentials', { defaultValue: '检查此凭证集合' })}
                       >
-                        {modelsState?.loading
-                          ? t('common.loading')
-                          : t('unified_routing.fetch_models', { defaultValue: '获取模型' })}
-                      </Button>
+                        {checkingProvider === provider ? (
+                          <LoadingSpinner size={8} />
+                        ) : (
+                          'check'
+                        )}
+                      </button>
                       {addingModelsMode && (
                         <label className={styles.selectAllLabel}>
                           <input
@@ -472,10 +422,20 @@ export function CredentialsOverview({
                         {pageCreds.map(cred => {
                           const isSelected = addingModelsMode && selectedCredentialIds.has(cred.id);
                           const checkStatus = credentialCheckStatus[cred.id];
+                          const isDisabled = cred.status === 'disabled';
+                          const cardClasses = [
+                            styles.credentialCard,
+                            isSelected && styles.credentialCardSelected,
+                            !addingModelsMode && styles.credentialCardReadOnly,
+                            !isDisabled && checkStatus === 'success' && styles.credentialCardSuccess,
+                            !isDisabled && checkStatus === 'error' && styles.credentialCardError,
+                            isDisabled && styles.credentialCardDisabled,
+                            isDisabled && isInCheckMode && styles.credentialCardDisabledWithBorder,
+                          ].filter(Boolean).join(' ');
                           return (
                             <div
                               key={cred.id}
-                              className={`${styles.credentialCard} ${isSelected ? styles.credentialCardSelected : ''} ${!addingModelsMode ? styles.credentialCardReadOnly : ''} ${checkStatus === 'success' ? styles.credentialCardSuccess : ''} ${checkStatus === 'error' ? styles.credentialCardError : ''}`}
+                              className={cardClasses}
                               onClick={() => {
                                 if (addingModelsMode) {
                                   toggleCredentialSelection(cred.id);
@@ -493,18 +453,17 @@ export function CredentialsOverview({
                                 />
                               )}
                               <span className={styles.credentialLabel} title={cred.id}>
-                                {cred.label || cred.id}
+                                {getCredentialDisplayLabel(cred)}
                               </span>
                               {addingModelsMode && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
+                                <button
+                                  type="button"
                                   className={styles.credentialModelsBtn}
                                   onClick={(e) => { e.stopPropagation(); openCredentialModelsModal(cred); }}
                                   title={t('unified_routing.view_models', { defaultValue: '查看模型' })}
                                 >
                                   <IconBot size={14} />
-                                </Button>
+                                </button>
                               )}
                             </div>
                           );
@@ -527,12 +486,11 @@ export function CredentialsOverview({
           </div>
         </div>
 
+        {/* ===== Right: Models ===== */}
         <div className={styles.overviewRight}>
           <div className={styles.rightPanelHeader}>
             <span className={styles.rightPanelTitle}>
-              {modelsPanelProvider
-                ? `${t('unified_routing.available_models')} · ${modelsPanelProvider}`
-                : t('unified_routing.available_models')}
+              {t('unified_routing.available_models', { defaultValue: '模型' })}
             </span>
           </div>
           <div className={styles.customModelInputRow}>
@@ -546,59 +504,37 @@ export function CredentialsOverview({
             />
           </div>
           <div className={styles.modelList}>
-            {/* Custom models section */}
-            {customModelsFiltered.length > 0 && (
-              <>
-                {customModelsFiltered.map(cm => {
-                  const isSelected = selectedModelIds.has(cm);
-                  return (
-                    <div
-                      key={`custom-${cm}`}
-                      className={`${styles.modelCard} ${isSelected ? styles.modelCardSelected : ''}`}
-                      onClick={() => addingModelsMode && toggleModelSelection(cm)}
-                    >
-                      {addingModelsMode && (
-                        <input type="checkbox" className={styles.modelCheckbox} checked={isSelected} readOnly />
-                      )}
-                      <span className={styles.modelName} title={cm}>{cm}</span>
-                      <button
-                        type="button"
-                        className={styles.removeCustomModelBtn}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCustomModels(prev => prev.filter(x => x !== cm));
-                          setSelectedModelIds(prev => { const n = new Set(prev); n.delete(cm); return n; });
-                        }}
-                        title="×"
-                      >×</button>
-                    </div>
-                  );
-                })}
-                {fetchedModels.length > 0 && <hr className={styles.modelDivider} />}
-              </>
-            )}
-            {/* Fetched models section */}
-            {fetchedModels.length > 0 ? (
-              fetchedModels.map(({ id, name }) => {
-                const isSelected = selectedModelIds.has(id);
+            {customModels.length > 0 ? (
+              customModels.map(cm => {
+                const isSelected = selectedModelIds.has(cm);
                 return (
                   <div
-                    key={id}
+                    key={`custom-${cm}`}
                     className={`${styles.modelCard} ${isSelected ? styles.modelCardSelected : ''}`}
-                    onClick={() => addingModelsMode && toggleModelSelection(id)}
+                    onClick={() => addingModelsMode && toggleModelSelection(cm)}
                   >
                     {addingModelsMode && (
                       <input type="checkbox" className={styles.modelCheckbox} checked={isSelected} readOnly />
                     )}
-                    <span className={styles.modelName} title={id}>{name || id}</span>
+                    <span className={styles.modelName} title={cm}>{cm}</span>
+                    <button
+                      type="button"
+                      className={styles.removeCustomModelBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCustomModels(prev => prev.filter(x => x !== cm));
+                        setSelectedModelIds(prev => { const n = new Set(prev); n.delete(cm); return n; });
+                      }}
+                      title="×"
+                    >×</button>
                   </div>
                 );
               })
-            ) : customModelsFiltered.length === 0 ? (
+            ) : (
               <div className={styles.noModels}>
-                {t('unified_routing.no_models', { defaultValue: '暂无模型' })}
+                {t('unified_routing.no_models_hint', { defaultValue: '点击左侧凭证可浏览并添加模型' })}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </div>
@@ -684,14 +620,14 @@ export function CredentialsOverview({
         </div>
       </Modal>
 
-      {/* Credential models modal */}
+      {/* Credential models modal — with add buttons */}
       <Modal
         open={credentialModalCred !== null}
         onClose={closeCredentialModelsModal}
         title={credentialModalCred
           ? `${t('unified_routing.credential_models_modal_title', { defaultValue: '模型列表' })} - ${credentialModalCred.label || credentialModalCred.id}`
           : ''}
-        width={420}
+        width={480}
         footer={
           <Button variant="secondary" onClick={closeCredentialModelsModal}>{t('common.close')}</Button>
         }
@@ -702,14 +638,29 @@ export function CredentialsOverview({
           <div className={styles.noModels}>{t('unified_routing.no_models', { defaultValue: '暂无模型' })}</div>
         ) : (
           <div className={styles.credentialModalModelsList}>
-            {(credentialModalModels ?? []).map(model => (
-              <div key={model.id} className={styles.credentialModalModelRow}>
-                <span className={styles.credentialModalModelId}>{model.name || model.id}</span>
-              </div>
-            ))}
+            {(credentialModalModels ?? []).map(model => {
+              const modelId = model.name || model.id;
+              const alreadyAdded = customModels.includes(modelId);
+              return (
+                <div key={model.id} className={styles.credentialModalModelRow}>
+                  <span className={styles.credentialModalModelId}>{modelId}</span>
+                  <button
+                    type="button"
+                    className={`${styles.credModalAddBtn} ${alreadyAdded ? styles.credModalAddBtnDone : ''}`}
+                    onClick={() => handleAddModelFromModal(modelId)}
+                    disabled={alreadyAdded}
+                    title={alreadyAdded
+                      ? t('unified_routing.model_already_added', { defaultValue: '已添加' })
+                      : t('unified_routing.add_to_models', { defaultValue: '添加到模型' })}
+                  >
+                    {alreadyAdded ? '✓' : '+'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </Modal>
-    </Card>
+    </>
   );
-}
+});

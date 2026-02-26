@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
+import { getCredentialDisplayLabelWithProvider } from '@/utils/unifiedRouting';
 import type { Pipeline, Layer, Target, LoadStrategy, CredentialInfo, RouteState, TargetState } from '@/types';
 
 interface PipelineEditorProps {
@@ -152,7 +153,7 @@ export function PipelineEditor({
   const getCredentialLabel = (credentialId: string): string => {
     const cred = credentials.find((c) => c.id === credentialId);
     if (!cred) return credentialId;
-    return cred.label || cred.prefix || `${cred.provider} (${cred.id.slice(0, 8)})`;
+    return getCredentialDisplayLabelWithProvider(cred);
   };
 
   const hasChanges = JSON.stringify(localPipeline) !== JSON.stringify(pipeline);
@@ -267,10 +268,12 @@ export function PipelineEditor({
                       <div className="targets-list">
                         {layer.targets.map((target, targetIndex) => {
                           const targetState = getTargetState(routeState, target.id);
+                          const cred = credentials.find((c) => c.id === target.credential_id);
+                          const isCredDisabled = cred?.status === 'disabled';
                           return (
                             <div key={target.id} className="target-row">
                               <div className="target-info">
-                                <span className="target-credential">
+                                <span className={`target-credential ${isCredDisabled ? 'target-credential-disabled' : ''}`}>
                                   {getCredentialLabel(target.credential_id)}
                                 </span>
                                 <span className="target-model">{target.model}</span>

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Modal } from '@/components/ui/Modal';
 import { unifiedRoutingApi } from '@/services/api';
+import { getCredentialDisplayLabel } from '@/utils/unifiedRouting';
 import type {
   Route,
   AggregatedStats,
@@ -129,7 +130,7 @@ export function RouteMonitor({ routes, credentials, disabled }: RouteMonitorProp
   const getCredentialLabel = (credentialId: string): string => {
     const cred = credentials.find((c) => c.id === credentialId);
     if (cred) {
-      return `${cred.provider}/${cred.label || cred.prefix || credentialId.slice(0, 8)}`;
+      return `${cred.provider}/${getCredentialDisplayLabel(cred)}`;
     }
     return credentialId.slice(0, 12);
   };

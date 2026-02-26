@@ -108,8 +108,12 @@ const OAUTH_MODEL_MAPPINGS_ENDPOINT = '/oauth-model-mappings';
 export const authFilesApi = {
   list: () => apiClient.get<AuthFilesResponse>('/auth-files'),
 
-  setStatus: (name: string, disabled: boolean) =>
-    apiClient.patch<AuthFileStatusResponse>('/auth-files/status', { name, disabled }),
+  setStatus: async (name: string, disabled: boolean) => {
+    console.debug('[authFilesApi:setStatus] request name=', name, 'disabled=', disabled);
+    const res = await apiClient.patch<AuthFileStatusResponse>('/auth-files/status', { name, disabled });
+    console.debug('[authFilesApi:setStatus] response', res);
+    return res;
+  },
 
   upload: (file: File) => {
     const formData = new FormData();

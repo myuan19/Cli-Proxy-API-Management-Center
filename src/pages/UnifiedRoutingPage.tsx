@@ -45,6 +45,14 @@ export function UnifiedRoutingPage() {
     fetchCredentials,
   } = useUnifiedRoutingStore();
 
+  const [credOverviewExpanded, setCredOverviewExpanded] = useState(true);
+  const [addingModelsMode, setAddingModelsMode] = useState(false);
+  const [credValidCombinationCount, setCredValidCombinationCount] = useState(0);
+  const [credSelectedCount, setCredSelectedCount] = useState(0);
+  const [credSelectedModels, setCredSelectedModels] = useState(0);
+  const [credCheckingAll, setCredCheckingAll] = useState(false);
+  const credOverviewRef = useRef<{ openBatchAddModal: () => void; checkAllCredentials: () => void } | null>(null);
+
   // Route pipelines cache - use ref to avoid useEffect dependency issues
   const routePipelinesRef = useRef<Record<string, Pipeline | null>>({});
   const loadingPipelinesRef = useRef<Record<string, boolean>>({});
@@ -500,15 +508,73 @@ export function UnifiedRoutingPage() {
         </div>
       </div>
 
-      {/* Credentials Overview */}
+      {/* Credentials Overview — collapsible, default collapsed */}
       <section className={styles.section}>
-        <CredentialsOverview
-          credentials={credentials}
-          loading={loading}
-          routes={routes}
-          routePipelines={routePipelines}
-          onPipelineChange={handlePipelineChange}
-        />
+        <div className={styles.credOverviewCollapsible}>
+          <div
+            className={styles.credOverviewHeader}
+            onClick={() => setCredOverviewExpanded(prev => !prev)}
+          >
+            <span className={styles.credOverviewExpand}>{credOverviewExpanded ? '▼' : '▶'}</span>
+            <span className={styles.credOverviewTitle}>
+              {t('unified_routing.credentials_overview')}
+            </span>
+            <span className={styles.credOverviewCount}>
+              {credentials.length} {t('unified_routing.credentials_count', { defaultValue: '个凭证' })}
+            </span>
+            <div className={styles.credOverviewActions} onClick={e => e.stopPropagation()}>
+              {addingModelsMode && (
+                <span className={styles.credOverviewSelectedCount}>
+                  已选{credSelectedCount}个凭证 | {credSelectedModels}个模型
+                </span>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => credOverviewRef.current?.checkAllCredentials()}
+                disabled={credCheckingAll}
+              >
+                {credCheckingAll
+                  ? t('common.loading')
+                  : t('unified_routing.check_all_credentials', { defaultValue: '检查全部凭证' })}
+              </Button>
+              {addingModelsMode && (
+                <Button variant="primary" size="sm" onClick={() => credOverviewRef.current?.openBatchAddModal()}
+                  disabled={credValidCombinationCount === 0}>
+                  {t('unified_routing.batch_add', { defaultValue: '批量添加' })}
+                  {credValidCombinationCount > 0 && ` (${credValidCombinationCount})`}
+                </Button>
+              )}
+              <button
+                type="button"
+                className={`${styles.addToRouteToggle} ${addingModelsMode ? styles.addToRouteToggleActive : ''}`}
+                onClick={() => setAddingModelsMode(prev => !prev)}
+              >
+                <span className={styles.addToRouteCheck}>{addingModelsMode ? '\u2713' : ''}</span>
+                {addingModelsMode
+                  ? t('unified_routing.cancel', { defaultValue: '取消' })
+                  : t('unified_routing.add_to_route', { defaultValue: '添加到路由' })}
+              </button>
+            </div>
+          </div>
+          <div style={{ display: credOverviewExpanded ? 'block' : 'none' }}>
+            <CredentialsOverview
+              ref={credOverviewRef}
+              credentials={credentials}
+              loading={loading}
+              routes={routes}
+              routePipelines={routePipelines}
+              onPipelineChange={handlePipelineChange}
+              addingModelsMode={addingModelsMode}
+              onValidCombinationCountChange={setCredValidCombinationCount}
+              onSelectedCountsChange={(creds, models) => {
+                setCredSelectedCount(creds);
+                setCredSelectedModels(models);
+              }}
+              onCheckingAllChange={setCredCheckingAll}
+            />
+          </div>
+        </div>
       </section>
 
       {/* Routes Section */}

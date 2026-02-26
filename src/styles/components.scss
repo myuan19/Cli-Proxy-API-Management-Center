@@ -601,7 +601,7 @@ textarea {
   padding: $spacing-md;
   background: var(--bg-primary);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: $spacing-md;
   flex-wrap: wrap;
@@ -610,6 +610,8 @@ textarea {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    flex: 1;
+    min-width: 0;
   }
 
   .item-title {
@@ -626,7 +628,10 @@ textarea {
 
   .item-actions {
     display: flex;
+    align-items: center;
     gap: $spacing-sm;
+    flex-shrink: 0;
+    padding-top: 2px;
   }
 }
 

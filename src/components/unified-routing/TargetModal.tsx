@@ -8,6 +8,9 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
+import { Select, type SelectOption } from '@/components/ui/Select';
+import selectStyles from '@/components/ui/Select.module.scss';
+import { getCredentialDisplayLabelWithProvider } from '@/utils/unifiedRouting';
 import type { Target, CredentialInfo } from '@/types';
 
 interface TargetModalProps {
@@ -87,11 +90,11 @@ export function TargetModal({
     onSave(layerLevel, newTarget, isEdit);
   };
 
-  const getCredentialLabel = (cred: CredentialInfo): string => {
-    if (cred.label) return cred.label;
-    if (cred.prefix) return `${cred.prefix} (${cred.provider})`;
-    return `${cred.provider} - ${cred.id.slice(0, 8)}`;
-  };
+  const credentialOptions: SelectOption[] = credentials.map((cred) => ({
+    value: cred.id,
+    label: getCredentialDisplayLabelWithProvider(cred),
+    optionClassName: cred.status === 'disabled' ? selectStyles.optionDisabled : undefined,
+  }));
 
   return (
     <Modal
@@ -115,22 +118,17 @@ export function TargetModal({
           {t('unified_routing.credential')}
           <span className="required">*</span>
         </label>
-        <select
+        <Select
           value={credentialId}
-          onChange={(e) => {
-            setCredentialId(e.target.value);
-            setModel(''); // Reset model when credential changes
+          options={credentialOptions}
+          onChange={(v) => {
+            setCredentialId(v);
+            setModel('');
           }}
+          placeholder={t('unified_routing.select_credential')}
           disabled={saving}
           className={errors.credentialId ? 'error' : ''}
-        >
-          <option value="">{t('unified_routing.select_credential')}</option>
-          {credentials.map((cred) => (
-            <option key={cred.id} value={cred.id}>
-              {getCredentialLabel(cred)}
-            </option>
-          ))}
-        </select>
+        />
         {errors.credentialId && <div className="form-error">{errors.credentialId}</div>}
       </div>
 

@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import iconVertex from '@/assets/icons/vertex.svg';
 import type { ProviderKeyConfig } from '@/types';
@@ -16,6 +17,7 @@ import { useNotificationStore } from '@/stores';
 import styles from '@/pages/AiProvidersPage.module.scss';
 import { ProviderList } from '../ProviderList';
 import { ProviderStatusBar } from '../ProviderStatusBar';
+import { hasDisableAllModelsRule } from '../utils';
 
 interface ModelHealthResult {
   status: 'healthy' | 'unhealthy' | 'timeout' | 'checking';
@@ -32,6 +34,7 @@ interface VertexSectionProps {
   onAdd: () => void;
   onEdit: (index: number) => void;
   onDelete: (index: number) => void;
+  onToggle: (index: number, enabled: boolean) => void;
 }
 
 export function VertexSection({
@@ -43,14 +46,17 @@ export function VertexSection({
   onAdd,
   onEdit,
   onDelete,
+  onToggle,
 }: VertexSectionProps) {
   const { t } = useTranslation();
   const { showNotification } = useNotificationStore();
   const actionsDisabled = disableControls || loading || isSwitching;
+  const toggleDisabled = disableControls || loading || isSwitching;
 
   const [healthResults, setHealthResults] = useState<Record<string, ModelHealthResult>>({});
   const [checkingAll, setCheckingAll] = useState(false);
-  const isAnyChecking = checkingAll;
+  const [checkingIndex, setCheckingIndex] = useState<number | null>(null);
+  const isAnyChecking = checkingAll || checkingIndex !== null;
 
   const runHealthCheck = async (opts: { model?: string }) => {
     let healthy = 0;
@@ -114,6 +120,15 @@ export function VertexSection({
     await runHealthCheck({});
   };
 
+  const handleCheckConfig = async (index: number) => {
+    if (isAnyChecking) return;
+    const cfg = configs[index];
+    if (!cfg) return;
+    setCheckingIndex(index);
+    await runHealthCheck({ model: cfg.models?.[0]?.name });
+    setCheckingIndex(null);
+  };
+
   const handleCheckModel = async (modelName: string) => {
     if (isAnyChecking) return;
     setHealthResults((prev) => {
@@ -159,7 +174,7 @@ export function VertexSection({
               variant="secondary"
               size="sm"
               onClick={() => void handleCheckAll()}
-              disabled={actionsDisabled || isAnyChecking || configs.length === 0}
+              disabled={actionsDisabled || isAnyChecking || configs.length === 0 || configs.every((c) => hasDisableAllModelsRule(c.excludedModels))}
             >
               {checkingAll ? <LoadingSpinner size={14} /> : t('ai_providers.health_check_all', { defaultValue: '全部检查' })}
             </Button>
@@ -177,7 +192,18 @@ export function VertexSection({
           emptyDescription={t('ai_providers.vertex_empty_desc')}
           onEdit={onEdit}
           onDelete={onDelete}
+          onHealthCheck={handleCheckConfig}
+          healthCheckLoading={(_item, index) => checkingIndex === index}
           actionsDisabled={actionsDisabled}
+          getRowDisabled={(item) => hasDisableAllModelsRule(item.excludedModels)}
+          renderExtraActions={(item, index) => (
+            <ToggleSwitch
+              label={t('ai_providers.config_toggle_label')}
+              checked={!hasDisableAllModelsRule(item.excludedModels)}
+              disabled={toggleDisabled}
+              onChange={(value) => void onToggle(index, value)}
+            />
+          )}
           renderContent={(item, index) => {
             const headerEntries = Object.entries(item.headers || {});
             const statusData = statusBarCache.get(item.apiKey) || calculateStatusBarData([]);
@@ -238,7 +264,7 @@ export function VertexSection({
                               : ''
                           }`}
                           onClick={() => void handleCheckModel(model.name)}
-                          disabled={isAnyChecking || healthResult?.status === 'checking'}
+                          disabled={isAnyChecking || healthResult?.status === 'checking' || hasDisableAllModelsRule(item.excludedModels)}
                           title={t('ai_providers.health_check_model', { defaultValue: '点击检查此模型' })}
                         >
                           <span className={styles.modelName}>{model.name}</span>

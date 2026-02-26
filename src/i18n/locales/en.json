@@ -1270,6 +1270,7 @@
     "clear_state": "Clear",
     "select_all": "Select all",
     "add_models": "Add models",
+    "add_to_route": "Add to route",
     "cancel": "Cancel",
     "batch_add": "Batch add",
     "batch_add_title": "Batch add to route layer",

@@ -1270,6 +1270,7 @@
     "clear_state": "清除",
     "select_all": "全选",
     "add_models": "添加模型",
+    "add_to_route": "添加到路由",
     "cancel": "取消",
     "batch_add": "批量添加",
     "batch_add_title": "批量添加到路由层",

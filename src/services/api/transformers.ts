@@ -175,6 +175,8 @@ const normalizeOpenAIProvider = (provider: any): OpenAIProviderConfig | null => 
   if (models.length) result.models = models;
   if (priority !== undefined) result.priority = Number(priority);
   if (testModel) result.testModel = String(testModel);
+  const excludedModels = normalizeExcludedModels(provider['excluded-models'] ?? provider.excludedModels);
+  if (excludedModels.length) result.excludedModels = excludedModels;
   return result;
 };
 

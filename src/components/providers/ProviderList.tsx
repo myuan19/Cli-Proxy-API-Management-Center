@@ -10,6 +10,8 @@ interface ProviderListProps<T> {
   renderContent: (item: T, index: number) => ReactNode;
   onEdit: (index: number) => void;
   onDelete: (index: number) => void;
+  onHealthCheck?: (index: number) => void;
+  healthCheckLoading?: (item: T, index: number) => boolean;
   emptyTitle: string;
   emptyDescription: string;
   deleteLabel?: string;
@@ -25,6 +27,8 @@ export function ProviderList<T>({
   renderContent,
   onEdit,
   onDelete,
+  onHealthCheck,
+  healthCheckLoading,
   emptyTitle,
   emptyDescription,
   deleteLabel,
@@ -46,6 +50,7 @@ export function ProviderList<T>({
     <div className="item-list">
       {items.map((item, index) => {
         const rowDisabled = getRowDisabled ? getRowDisabled(item, index) : false;
+        const isChecking = healthCheckLoading ? healthCheckLoading(item, index) : false;
         return (
           <div
             key={keyField(item, index)}
@@ -62,6 +67,17 @@ export function ProviderList<T>({
               >
                 {t('common.edit')}
               </Button>
+              {onHealthCheck && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onHealthCheck(index)}
+                  disabled={actionsDisabled || isChecking || rowDisabled}
+                  loading={isChecking}
+                >
+                  {t('ai_providers.health_check', { defaultValue: '健康检查' })}
+                </Button>
+              )}
               <Button
                 variant="danger"
                 size="sm"

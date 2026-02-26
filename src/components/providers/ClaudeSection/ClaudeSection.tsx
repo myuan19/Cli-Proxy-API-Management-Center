@@ -56,7 +56,8 @@ export function ClaudeSection({
   // modelId (from SSE result) -> result
   const [healthResults, setHealthResults] = useState<Record<string, ModelHealthResult>>({});
   const [checkingAll, setCheckingAll] = useState(false);
-  const isAnyChecking = checkingAll;
+  const [checkingIndex, setCheckingIndex] = useState<number | null>(null);
+  const isAnyChecking = checkingAll || checkingIndex !== null;
 
   const runHealthCheck = async (opts: { model?: string }) => {
     let healthy = 0;
@@ -124,6 +125,15 @@ export function ClaudeSection({
     await runHealthCheck({});
   };
 
+  const handleCheckConfig = async (index: number) => {
+    if (isAnyChecking) return;
+    const cfg = configs[index];
+    if (!cfg) return;
+    setCheckingIndex(index);
+    await runHealthCheck({ model: cfg.models?.[0]?.name });
+    setCheckingIndex(null);
+  };
+
   const handleCheckModel = async (modelName: string) => {
     if (isAnyChecking) return;
     setHealthResults((prev) => {
@@ -174,7 +184,7 @@ export function ClaudeSection({
               variant="secondary"
               size="sm"
               onClick={() => void handleCheckAll()}
-              disabled={actionsDisabled || isAnyChecking || configs.length === 0}
+              disabled={actionsDisabled || isAnyChecking || configs.length === 0 || configs.every((c) => hasDisableAllModelsRule(c.excludedModels))}
             >
               {checkingAll ? <LoadingSpinner size={14} /> : t('ai_providers.health_check_all', { defaultValue: '全部检查' })}
             </Button>
@@ -192,6 +202,8 @@ export function ClaudeSection({
           emptyDescription={t('ai_providers.claude_empty_desc')}
           onEdit={onEdit}
           onDelete={onDelete}
+          onHealthCheck={handleCheckConfig}
+          healthCheckLoading={(_item, index) => checkingIndex === index}
           actionsDisabled={actionsDisabled}
           getRowDisabled={(item) => hasDisableAllModelsRule(item.excludedModels)}
           renderExtraActions={(item, index) => (
@@ -299,7 +311,7 @@ export function ClaudeSection({
                               : ''
                           }`}
                           onClick={() => void handleCheckModel(model.name)}
-                          disabled={isAnyChecking || healthResult?.status === 'checking'}
+                          disabled={isAnyChecking || healthResult?.status === 'checking' || configDisabled}
                           title={t('ai_providers.health_check_model', { defaultValue: '点击检查此模型' })}
                         >
                           <span className={styles.modelName}>{model.name}</span>

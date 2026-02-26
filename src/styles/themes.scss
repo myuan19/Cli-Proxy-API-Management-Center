@@ -29,6 +29,7 @@
   --primary-contrast: #ffffff;
 
   --success-color: #10b981;
+  --credential-disabled-color: #d97706; // 禁用凭证/节点显示色（统一黄色）
   --warning-color: #c65746; // 错误/警告色
   --error-color: #c65746;
   --danger-color: var(--error-color);
@@ -83,6 +84,7 @@
   --primary-contrast: #ffffff;
 
   --success-color: #10b981;
+  --credential-disabled-color: #d97706; // 禁用凭证/节点显示色（统一黄色）
   --warning-color: #c65746;
   --error-color: #c65746;
   --danger-color: var(--error-color);
