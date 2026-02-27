@@ -21,9 +21,8 @@ export interface DetailedAttempt {
 
 export interface FormatInfo {
   endpoint_format: string;
-  detected_format?: string;
-  was_corrected?: boolean;
-  has_error?: boolean;
+  compat_applied?: boolean;
+  compat_rule?: string;
 }
 
 export interface DetailedRequestRecord {

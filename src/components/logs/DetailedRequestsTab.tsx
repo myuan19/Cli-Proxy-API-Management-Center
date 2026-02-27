@@ -45,17 +45,10 @@ function inferRequestFormat(url: string): string | null {
 
 function renderFormatBadge(format: FormatInfo | undefined, url: string, t: (key: string, opts?: Record<string, unknown>) => string) {
   if (format && format.endpoint_format) {
-    if (format.has_error) {
+    if (format.compat_applied && format.compat_rule) {
       return (
-        <span className={styles.formatBadgeError} title={t('detailed_requests.format_error', { defaultValue: '格式检测错误' })}>
-          {format.endpoint_format} ✗
-        </span>
-      );
-    }
-    if (format.was_corrected && format.detected_format) {
-      return (
-        <span className={styles.formatBadgeCorrected} title={t('detailed_requests.format_corrected', { defaultValue: '格式已自动纠正' })}>
-          {format.endpoint_format} → {format.detected_format}
+        <span className={styles.formatBadgeCompat} title={t('detailed_requests.format_compat', { defaultValue: '兼容层已转换请求体' })}>
+          {format.endpoint_format} ⚡ {format.compat_rule}
         </span>
       );
     }
