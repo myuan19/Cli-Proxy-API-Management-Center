@@ -19,6 +19,13 @@ export interface DetailedAttempt {
   duration_ms?: number;
 }
 
+export interface FormatInfo {
+  endpoint_format: string;
+  detected_format?: string;
+  was_corrected?: boolean;
+  has_error?: boolean;
+}
+
 export interface DetailedRequestRecord {
   id: string;
   timestamp: string;
@@ -28,6 +35,7 @@ export interface DetailedRequestRecord {
   method: string;
   status_code: number;
   model?: string;
+  format?: FormatInfo;
   request_headers?: Record<string, string[]>;
   request_body?: string;
   response_headers?: Record<string, string[]>;
@@ -36,6 +44,7 @@ export interface DetailedRequestRecord {
   total_duration_ms: number;
   is_streaming: boolean;
   is_simulated?: boolean;
+  pending?: boolean;
   error?: string;
 }
 
@@ -48,11 +57,14 @@ export interface DetailedRequestSummary {
   method: string;
   status_code: number;
   model?: string;
+  format?: FormatInfo;
   total_duration_ms: number;
   is_streaming: boolean;
   is_simulated?: boolean;
+  pending?: boolean;
   error?: string;
   attempt_count: number;
+  node_count?: number;
 }
 
 export interface CachedRecordStub {

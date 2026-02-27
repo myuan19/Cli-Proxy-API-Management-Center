@@ -565,25 +565,27 @@
 
 .attemptDetail {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 0.5rem;
 }
 
 .attemptRow {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 0.5rem;
   font-size: 0.8125rem;
 }
 
 .attemptLabel {
   color: var(--text-tertiary);
+  flex-shrink: 0;
+  min-width: 40px;
 }
 
 .attemptValue {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  word-break: break-all;
+  word-break: break-word;
 }
 
 .attemptError {
@@ -606,8 +608,6 @@
   color: var(--danger-color);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 150px;
-  overflow-y: auto;
 }
 
 .noAttempts {

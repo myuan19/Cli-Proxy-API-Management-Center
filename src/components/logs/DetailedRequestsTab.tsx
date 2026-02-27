@@ -15,6 +15,7 @@ import type {
   DetailedAttempt,
   DetailedRequestsQuery,
   RecordOrCached,
+  FormatInfo,
 } from '@/services/api/detailedRequests';
 import styles from './DetailedRequestsTab.module.scss';
 
@@ -39,6 +40,39 @@ function inferRequestFormat(url: string): string | null {
   if (url.includes('/v1/messages')) return 'claude';
   if (url.includes('/v1beta/models/')) return 'gemini';
   if (url.includes('/v1internal')) return 'gemini-cli';
+  return null;
+}
+
+function renderFormatBadge(format: FormatInfo | undefined, url: string, t: (key: string, opts?: Record<string, unknown>) => string) {
+  if (format && format.endpoint_format) {
+    if (format.has_error) {
+      return (
+        <span className={styles.formatBadgeError} title={t('detailed_requests.format_error', { defaultValue: '格式检测错误' })}>
+          {format.endpoint_format} ✗
+        </span>
+      );
+    }
+    if (format.was_corrected && format.detected_format) {
+      return (
+        <span className={styles.formatBadgeCorrected} title={t('detailed_requests.format_corrected', { defaultValue: '格式已自动纠正' })}>
+          {format.endpoint_format} → {format.detected_format}
+        </span>
+      );
+    }
+    return (
+      <span className={styles.formatBadge} title={t('detailed_requests.format_label', { defaultValue: '格式' })}>
+        {format.endpoint_format}
+      </span>
+    );
+  }
+  const inferred = inferRequestFormat(url);
+  if (inferred) {
+    return (
+      <span className={styles.formatBadge} title={t('detailed_requests.format_label', { defaultValue: '格式' })}>
+        {inferred}
+      </span>
+    );
+  }
   return null;
 }
 
@@ -140,6 +174,21 @@ function downloadText(content: string, filename: string, mimeType = 'text/plain'
   URL.revokeObjectURL(url);
 }
 
+/** Ctrl+A handler: select all text within the target element only */
+function handleCtrlA(e: React.KeyboardEvent<HTMLElement>) {
+  if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    const el = e.currentTarget;
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Sub-components                                                      */
 /* ------------------------------------------------------------------ */
@@ -161,7 +210,11 @@ function HeadersView({
         <span className={`${styles.headersArrow} ${open ? styles.headersArrowOpen : ''}`}>&#9654;</span>
         {' '}Headers <span style={{ color: 'var(--text-secondary)', fontSize: '11px', marginLeft: 4 }}>({count})</span>
       </div>
-      <div className={`${styles.headersList} ${open ? styles.headersListOpen : ''}`}>
+      <div
+        className={`${styles.headersList} ${open ? styles.headersListOpen : ''}`}
+        tabIndex={open ? 0 : undefined}
+        onKeyDown={handleCtrlA}
+      >
         {keys.map((key) =>
           headers[key].map((val, i) => (
             <div key={`${key}-${i}`} className={styles.headerLine}>
@@ -285,7 +338,11 @@ function DataBlock({
           </div>
         )}
         {hasBody && (
-          <div className={styles.bodyContent}>
+          <div
+            className={styles.bodyContent}
+            tabIndex={0}
+            onKeyDown={handleCtrlA}
+          >
             {sse && showAssembled ? (assembled || '(empty)') : formattedBody}
           </div>
         )}
@@ -308,7 +365,7 @@ function summarizeAuth(auth: string): string {
   return pieces.length > 0 ? pieces.join(' · ') : auth;
 }
 
-function AttemptRequestBlock({ attempt, attemptIndex }: { attempt: DetailedAttempt; attemptIndex: number }) {
+function AttemptRequestBlock({ attempt, attemptIndex: nodeNumber }: { attempt: DetailedAttempt; attemptIndex: number }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const hasHeaders = attempt.request_headers && Object.keys(attempt.request_headers).length > 0;
@@ -321,7 +378,7 @@ function AttemptRequestBlock({ attempt, attemptIndex }: { attempt: DetailedAttem
     e.stopPropagation();
     if (!hasBody) return;
     const isJson = attempt.request_body!.trimStart().startsWith('{') || attempt.request_body!.trimStart().startsWith('[');
-    downloadText(formattedBody, `attempt-${attemptIndex}-request.${isJson ? 'json' : 'txt'}`, isJson ? 'application/json' : 'text/plain');
+    downloadText(formattedBody, `node-${nodeNumber}-request.${isJson ? 'json' : 'txt'}`, isJson ? 'application/json' : 'text/plain');
   };
 
   return (
@@ -349,7 +406,7 @@ function AttemptRequestBlock({ attempt, attemptIndex }: { attempt: DetailedAttem
       </div>
       <div className={`${styles.blockContent} ${open ? styles.blockContentOpen : ''}`}>
         {hasHeaders && <HeadersView headers={attempt.request_headers!} />}
-        {hasBody && <div className={styles.bodyContent}>{formattedBody}</div>}
+        {hasBody && <div className={styles.bodyContent} tabIndex={0} onKeyDown={handleCtrlA}>{formattedBody}</div>}
       </div>
     </div>
   );
@@ -366,17 +423,16 @@ function inlineStatusClass(code: number): string {
 
 function AttemptResponseBlock({
   attempt,
-  attemptIndex,
+  nodeNumber,
 }: {
   attempt: DetailedAttempt;
-  attemptIndex: number;
+  nodeNumber: number;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const headers = attempt.response_headers;
   const body = attempt.response_body;
   const hasBody = body && body !== '{}' && body !== '""' && body !== '<empty>';
-  const displayIndex = attempt.index ?? attemptIndex;
   const sse = hasBody && isSSEBody(body!);
   const formattedBody = hasBody ? formatJson(body!) : '';
 
@@ -384,10 +440,10 @@ function AttemptResponseBlock({
     e.stopPropagation();
     if (!hasBody) return;
     if (sse) {
-      downloadText(body!, `attempt-${displayIndex}-response-sse.txt`);
+      downloadText(body!, `node-${nodeNumber}-response-sse.txt`);
     } else {
       const isJson = body!.trimStart().startsWith('{') || body!.trimStart().startsWith('[');
-      downloadText(formattedBody, `attempt-${displayIndex}-response.${isJson ? 'json' : 'txt'}`, isJson ? 'application/json' : 'text/plain');
+      downloadText(formattedBody, `node-${nodeNumber}-response.${isJson ? 'json' : 'txt'}`, isJson ? 'application/json' : 'text/plain');
     }
   };
 
@@ -402,7 +458,7 @@ function AttemptResponseBlock({
           </span>
         )}
         <span className={styles.inlineTag}>
-          {t('detailed_requests.attempt_label', { defaultValue: '尝试' })} #{displayIndex}
+          {t('detailed_requests.node_label', { defaultValue: '节点' })} #{nodeNumber}
         </span>
         {attempt.error && !attempt.status_code && (
           <span style={{ color: 'var(--error-color)', fontSize: 11 }}>Error</span>
@@ -418,7 +474,7 @@ function AttemptResponseBlock({
       <div className={`${styles.blockContent} ${open ? styles.blockContentOpen : ''}`}>
         <HeadersView headers={headers || {}} />
         {hasBody && (
-          <div className={styles.bodyContent}>{formattedBody}</div>
+          <div className={styles.bodyContent} tabIndex={0} onKeyDown={handleCtrlA}>{formattedBody}</div>
         )}
         {attempt.error && (
           <div className={styles.attemptError}>Error: {attempt.error}</div>
@@ -435,30 +491,41 @@ function AttemptResponseBlock({
 
 /**
  * 内部处理过程列表：展示所有尝试的请求+响应。
- * 对于请求部分：首次始终展示；后续仅当 URL/Auth/Body 不同时才展示（避免重复）。
- * 对于响应部分：每次尝试都展示。
+ * 对于请求部分：首次始终展示；后续仅当节点（url+auth 组合）变化时才展示（避免重复）。
+ * 对于响应部分：每次尝试都展示，标注节点号。
+ * 节点由 upstream_url + auth 唯一确定，同节点多次内部重试共享同一节点号。
  */
 function ProcessingDetailsList({ attempts }: { attempts: DetailedAttempt[] }) {
   if (attempts.length === 0) return null;
+
+  // Build node number map: url+auth → node number (1-based, in order of first appearance)
+  const nodeKeyMap = new Map<string, number>();
+  let nodeCounter = 0;
+  const nodeNumbers = attempts.map(a => {
+    const key = `${a.upstream_url || ''}::${a.auth || ''}`;
+    if (!nodeKeyMap.has(key)) {
+      nodeKeyMap.set(key, ++nodeCounter);
+    }
+    return nodeKeyMap.get(key)!;
+  });
+
   return (
     <>
       {attempts.map((attempt, i) => {
-        const displayIndex = attempt.index ?? i + 1;
+        const nodeNum = nodeNumbers[i];
         const prev = i > 0 ? attempts[i - 1] : null;
-        const showRequest =
-          i === 0 ||
-          attempt.upstream_url !== prev?.upstream_url ||
-          attempt.auth !== prev?.auth ||
-          attempt.request_body !== prev?.request_body;
-        // New group starts when a new request block is shown (different target/config)
-        const isNewGroup = showRequest && i > 0;
+        // Show a new request block when the node changes (different url+auth)
+        const nodeChanged = i === 0 || nodeNumbers[i] !== nodeNumbers[i - 1];
+        const bodyChanged = !nodeChanged && attempt.request_body !== prev?.request_body;
+        const showRequest = nodeChanged || bodyChanged;
+        const isNewGroup = nodeChanged && i > 0;
         return (
           <div
-            key={`attempt-${displayIndex}-${i}`}
+            key={`node-${nodeNum}-attempt-${i}`}
             className={`${styles.attemptGroup} ${isNewGroup ? styles.attemptGroupNew : ''}`}
           >
-            {showRequest && <AttemptRequestBlock attempt={attempt} attemptIndex={displayIndex} />}
-            <AttemptResponseBlock attempt={attempt} attemptIndex={displayIndex} />
+            {showRequest && <AttemptRequestBlock attempt={attempt} attemptIndex={nodeNum} />}
+            <AttemptResponseBlock attempt={attempt} nodeNumber={nodeNum} />
           </div>
         );
       })}
@@ -481,6 +548,9 @@ function RecordCard({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [retriesBlockOpen, setRetriesBlockOpen] = useState(false);
 
+  const isPending = !!summary.pending;
+  const isSimulated = !!summary.is_simulated;
+
   const fetchRecordIfNeeded = useCallback(async (): Promise<DetailedRequestRecord | null> => {
     if (fullRecord) return fullRecord;
     setLoadingDetail(true);
@@ -496,6 +566,7 @@ function RecordCard({
   }, [fullRecord, summary.id]);
 
   const handleToggleExpand = async () => {
+    if (isPending || isSimulated) return;
     const willExpand = !expanded;
     setExpanded(willExpand);
     if (willExpand && !fullRecord) {
@@ -505,124 +576,142 @@ function RecordCard({
 
   const handleDownloadRecord = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isPending) return;
     const rec = fullRecord || await fetchRecordIfNeeded();
     if (rec) {
       downloadText(JSON.stringify(rec, null, 2), `${rec.id}-full.json`, 'application/json');
     }
   };
 
-  const hasAttempts = summary.attempt_count > 0;
   const record = fullRecord;
   const attempts = record?.attempts || [];
-  const uniqueTargetCount = attempts.length > 0
-    ? new Set(attempts.map(a => a.auth || a.upstream_url || '')).size
-    : 0;
-  const nodeRetries = uniqueTargetCount > 1 ? uniqueTargetCount - 1 : 0;
+  // Node count from full record (url+auth去重); for header badge use summary.node_count directly
+  const uniqueNodeCount = new Set(attempts.map(a => `${a.upstream_url || ''}::${a.auth || ''}`)).size;
 
   return (
-    <div className={styles.card}>
+    <div className={`${styles.card} ${isPending ? styles.cardPending : ''}`}>
       <div className={styles.cardHeader} onClick={handleToggleExpand}>
-        <span className={`${styles.expandIcon} ${expanded ? styles.expandIconOpen : ''}`}>&#9654;</span>
+        {isSimulated ? (
+          <span className={`${styles.expandIcon} ${styles.expandIconDisabled}`} aria-hidden>&#9654;</span>
+        ) : (
+          <span className={`${styles.expandIcon} ${isPending ? styles.expandIconDisabled : ''} ${expanded ? styles.expandIconOpen : ''}`}>
+            {isPending ? '\u23F3' : '\u25B6'}
+          </span>
+        )}
         {summary.is_simulated && (
           <span className={styles.simulatedBadge}>{t('detailed_requests.simulated_tag', { defaultValue: '模拟' })}</span>
         )}
         <span className={styles.methodBadge}>{summary.method}</span>
         <span className={styles.pathText}>{summary.url}</span>
         {summary.model && <span className={styles.modelBadge}>{summary.model}</span>}
-        <span className={`${styles.statusBadge} ${statusClass(summary.status_code)}`}>
-          {summary.status_code}
-        </span>
+        {!isPending && renderFormatBadge(summary.format, summary.url, t)}
+        {!isPending && (
+          <span className={`${styles.statusBadge} ${statusClass(summary.status_code)}`}>
+            {summary.status_code || '???'}
+          </span>
+        )}
+        {isPending && (
+          <span className={styles.pendingBadge}>
+            {t('detailed_requests.pending_label', { defaultValue: '进行中...' })}
+          </span>
+        )}
         <span className={styles.headerSpacer} aria-hidden />
-        <span className={styles.blockActions} onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            className={styles.blockDlBtn}
-            onClick={handleDownloadRecord}
-            title={t('detailed_requests.download_full', { defaultValue: '下载完整记录' })}
-          >
-            ↓
-          </button>
-        </span>
+        {!isPending && (
+          <span className={styles.blockActions} onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className={styles.blockDlBtn}
+              onClick={handleDownloadRecord}
+              title={t('detailed_requests.download_full', { defaultValue: '下载完整记录' })}
+            >
+              ↓
+            </button>
+          </span>
+        )}
         <div className={styles.meta}>
           {summary.api_key && <span className={styles.apiKeyTag}>{summary.api_key}</span>}
-          <span className={`${styles.metaItem} ${styles.durationText}`}>{summary.total_duration_ms}ms</span>
-          {hasAttempts && (
+          {!isPending && (
+            <span className={`${styles.metaItem} ${styles.durationText}`}>{summary.total_duration_ms}ms</span>
+          )}
+          {!isPending && (summary.node_count ?? 0) > 0 && (
             <span className={styles.metaItem}>
-              {summary.attempt_count} attempt{summary.attempt_count > 1 ? 's' : ''}
+              {summary.node_count} {t('detailed_requests.nodes_unit', { defaultValue: '节点' })}
             </span>
           )}
           <span className={styles.timestampText}>{fmtTime(summary.timestamp)}</span>
         </div>
       </div>
 
-      <div className={`${styles.cardBody} ${expanded ? styles.cardBodyOpen : ''}`}>
-        {loadingDetail ? (
-          <div className={styles.loadingState} style={{ padding: '12px 0' }}>{t('common.loading')}</div>
-        ) : record ? (
-          <>
-            <div className={styles.actions}>
-              <Button size="sm" onClick={() => onCopyCurl(record.id)}>
-                {t('detailed_requests.copy_curl')}
-              </Button>
-              <span className={styles.fullTimestamp}>{fmtDate(record.timestamp)}</span>
-              {record.is_streaming && <span className={styles.streamBadge}>Streaming</span>}
-            </div>
-
-            <DataBlock
-              title={<>{t('detailed_requests.client_request')}{(() => { const fmt = inferRequestFormat(record.url); return fmt ? <span className={styles.formatBadge} title={t('detailed_requests.format_label', { defaultValue: '格式' })}>{fmt}</span> : null; })()}</>}
-              headers={record.request_headers}
-              body={record.request_body}
-              downloadPrefix={`${record.id}-client-request`}
-            />
-
-            {showRetriesBlock && attempts.length > 0 && (
-              <div className={styles.retryBlock}>
-                <div
-                  className={styles.retryBlockTitle}
-                  onClick={() => setRetriesBlockOpen(!retriesBlockOpen)}
-                >
-                  <span className={`${styles.blockArrow} ${retriesBlockOpen ? styles.blockArrowOpen : ''}`}>&#9654;</span>
-                  {t('detailed_requests.internal_processing', { defaultValue: '内部处理过程' })}
-                  <span className={styles.inlineAttemptCount}>
-                    {attempts.length} {t('detailed_requests.attempts_unit', { defaultValue: '次尝试' })}
-                    {nodeRetries > 0 && ` (${nodeRetries} ${nodeRetries === 1 ? 'retry' : 'retries'})`}
-                  </span>
-                </div>
-                {retriesBlockOpen && (
-                  <div className={styles.retryBlockContent}>
-                    <ProcessingDetailsList attempts={attempts} />
-                  </div>
-                )}
+      {!isPending && !isSimulated && (
+        <div className={`${styles.cardBody} ${expanded ? styles.cardBodyOpen : ''}`}>
+          {loadingDetail ? (
+            <div className={styles.loadingState} style={{ padding: '12px 0' }}>{t('common.loading')}</div>
+          ) : record ? (
+            <>
+              <div className={styles.actions}>
+                <Button size="sm" onClick={() => onCopyCurl(record.id)}>
+                  {t('detailed_requests.copy_curl')}
+                </Button>
+                <span className={styles.fullTimestamp}>{fmtDate(record.timestamp)}</span>
+                {record.is_streaming && <span className={styles.streamBadge}>Streaming</span>}
               </div>
-            )}
 
-            <DataBlock
-              title={t('detailed_requests.final_response')}
-              headers={record.response_headers}
-              body={record.response_body}
-              titleClass={
-                record.status_code >= 200 && record.status_code < 300
-                  ? styles.blockTitleSuccess
-                  : record.status_code >= 400
-                    ? styles.blockTitleError
-                    : undefined
-              }
-              defaultOpen={false}
-              downloadPrefix={`${record.id}-response`}
-            />
-
-            {record.error && (
               <DataBlock
-                title={t('detailed_requests.error')}
-                body={record.error}
-                titleClass={styles.blockTitleError}
-                defaultOpen
-                downloadPrefix={`${record.id}-error`}
+                title={<>{t('detailed_requests.client_request')}{renderFormatBadge(record.format, record.url, t)}</>}
+                headers={record.request_headers}
+                body={record.request_body}
+                downloadPrefix={`${record.id}-client-request`}
               />
-            )}
-          </>
-        ) : null}
-      </div>
+
+              {showRetriesBlock && attempts.length > 0 && (
+                <div className={styles.retryBlock}>
+                  <div
+                    className={styles.retryBlockTitle}
+                    onClick={() => setRetriesBlockOpen(!retriesBlockOpen)}
+                  >
+                    <span className={`${styles.blockArrow} ${retriesBlockOpen ? styles.blockArrowOpen : ''}`}>&#9654;</span>
+                    {t('detailed_requests.internal_processing', { defaultValue: '内部处理过程' })}
+                    <span className={styles.inlineAttemptCount}>
+                      {attempts.length} {t('detailed_requests.attempts_unit', { defaultValue: '次尝试' })}
+                      {uniqueNodeCount > 0 && ` / ${uniqueNodeCount} ${t('detailed_requests.nodes_unit', { defaultValue: '节点' })}`}
+                    </span>
+                  </div>
+                  {retriesBlockOpen && (
+                    <div className={styles.retryBlockContent}>
+                      <ProcessingDetailsList attempts={attempts} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <DataBlock
+                title={t('detailed_requests.final_response')}
+                headers={record.response_headers}
+                body={record.response_body}
+                titleClass={
+                  record.status_code >= 200 && record.status_code < 300
+                    ? styles.blockTitleSuccess
+                    : record.status_code >= 400
+                      ? styles.blockTitleError
+                      : undefined
+                }
+                defaultOpen={false}
+                downloadPrefix={`${record.id}-response`}
+              />
+
+              {record.error && (
+                <DataBlock
+                  title={t('detailed_requests.error')}
+                  body={record.error}
+                  titleClass={styles.blockTitleError}
+                  defaultOpen
+                  downloadPrefix={`${record.id}-error`}
+                />
+              )}
+            </>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -728,12 +817,14 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
           }
         } else {
           const summary = entry as DetailedRequestSummary;
-          recordCache.current.set(summary.id, summary);
+          if (!summary.pending) {
+            recordCache.current.set(summary.id, summary);
+          }
           resolved.push(summary);
         }
       }
 
-      const newIds = resolved.map((r) => `${r.id}:${r.status_code}`).join(',');
+      const newIds = resolved.map((r) => `${r.id}:${r.status_code}:${r.pending ? 'p' : 'c'}`).join(',');
       if (newIds !== lastIds.current) {
         setRecords(resolved);
         lastIds.current = newIds;
@@ -806,8 +897,12 @@ export function DetailedRequestsTab({ disabled, fullPage }: Props) {
 
   const handleToggleShowSimulated = async (show: boolean) => {
     const prev = showSimulated;
+    ++requestVersion.current;
     setShowSimulated(show);
     lastIds.current = '';
+    recordCache.current.clear();
+    setLoading(true);
+    setRecords([]);
     try {
       await detailedRequestsApi.setShowSimulated(show);
     } catch {

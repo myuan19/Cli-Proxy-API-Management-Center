@@ -233,6 +233,32 @@
   transform: rotate(90deg);
 }
 
+.expandIconDisabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cardPending {
+  opacity: 0.85;
+  border-left: 3px solid var(--warning-color);
+}
+
+.pendingBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: $radius-full;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  flex-shrink: 0;
+  animation: pendingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pendingPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .simulatedBadge {
   font-weight: 700;
   font-size: 10px;
@@ -296,6 +322,20 @@
   vertical-align: middle;
   line-height: 1.4;
   letter-spacing: 0.3px;
+}
+
+.formatBadgeCorrected {
+  @extend .formatBadge;
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.formatBadgeError {
+  @extend .formatBadge;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.25);
 }
 
 .statusBadge {
@@ -568,6 +608,10 @@
   overflow: auto;
   color: var(--text-primary);
   border-top: 1px solid rgba(0, 0, 0, 0.05);
+
+  &:focus {
+    outline: none;
+  }
 }
 
 /* Attempt cards */
@@ -707,7 +751,7 @@
   color: var(--text-secondary);
 }
 
-/* Block-level download buttons */
+/* Block-level action buttons (copy / download) */
 .blockActions {
   margin-left: auto;
   display: flex;

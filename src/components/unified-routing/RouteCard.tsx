@@ -207,12 +207,43 @@ export function RouteCard({
     }
   };
   
+  const handleSingleHealthCheck = async (targetId: string) => {
+    setHealthCheckStatus(prev => ({ ...prev, [targetId]: { status: 'checking' } }));
+    try {
+      const result = await unifiedRoutingApi.triggerHealthCheck(route.id, targetId);
+      const found = result.results.find(r => r.target_id === targetId);
+      if (found) {
+        setHealthCheckStatus(prev => ({
+          ...prev,
+          [targetId]: {
+            status: found.status === 'healthy' ? 'success' : 'failed',
+            message: found.message,
+            latency_ms: found.latency_ms,
+          },
+        }));
+      } else {
+        setHealthCheckStatus(prev => ({
+          ...prev,
+          [targetId]: { status: 'failed', message: 'No result returned' },
+        }));
+      }
+    } catch {
+      setHealthCheckStatus(prev => ({
+        ...prev,
+        [targetId]: { status: 'failed', message: 'Check failed' },
+      }));
+    }
+  };
+
   const clearAllResults = () => {
     setSimulateStatus({});
     setHealthCheckStatus({});
   };
-  
-  const hasAnyResults = Object.keys(simulateStatus).length > 0 || Object.keys(healthCheckStatus).length > 0;
+
+  // Show the × clear button only when there are latency results (i.e. a check completed)
+  const hasLatencyResults =
+    Object.values(healthCheckStatus).some(r => r.latency_ms != null) ||
+    Object.values(simulateStatus).some(r => r.latency_ms != null);
 
   const getCredentialInfo = (credentialId: string) => {
     return credentials?.find((c) => c.id === credentialId);
@@ -587,6 +618,17 @@ export function RouteCard({
           )}
         </div>
         <div className={styles.headerActions} onClick={(e) => e.stopPropagation()}>
+          {hasLatencyResults && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllResults}
+              disabled={disabled || checkingAll || simulating}
+              title={t('unified_routing.clear_check_results', { defaultValue: '清除检查结果' })}
+            >
+              ✕
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
@@ -605,16 +647,6 @@ export function RouteCard({
           >
             {t('unified_routing.check_all')}
           </Button>
-          {hasAnyResults && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearAllResults}
-              disabled={disabled || checkingAll || simulating}
-            >
-              ✕
-            </Button>
-          )}
           <Button
             variant="secondary"
             size="sm"
@@ -863,6 +895,14 @@ export function RouteCard({
                                   className={styles.targetActions}
                                   onClick={(e) => e.stopPropagation()}
                                 >
+                                  <button
+                                    className={styles.iconButton}
+                                    onClick={() => handleSingleHealthCheck(target.id)}
+                                    disabled={disabled || checkingAll || simulating || hc?.status === 'checking'}
+                                    title={t('unified_routing.check_single', { defaultValue: '检查此节点' })}
+                                  >
+                                    ⟳
+                                  </button>
                                   <button
                                     className={styles.iconButton}
                                     onClick={() => onEditTarget(route.id, layer.level, target)}
