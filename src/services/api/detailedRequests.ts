@@ -23,6 +23,7 @@ export interface FormatInfo {
   endpoint_format: string;
   compat_applied?: boolean;
   compat_rule?: string;
+  compat_error?: string;
 }
 
 export interface DetailedRequestRecord {
