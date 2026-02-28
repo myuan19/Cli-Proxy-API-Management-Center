@@ -47,7 +47,7 @@ function renderFormatBadge(format: FormatInfo | undefined, url: string, t: (key:
   if (format && format.endpoint_format) {
     if (format.compat_applied && format.compat_rule) {
       return (
-        <span className={styles.formatBadgeCompat} title={t('detailed_requests.format_compat', { defaultValue: '兼容层已转换请求体' })}>
+        <span className={styles.formatBadgeCompat} title={t('detailed_requests.format_compat', { defaultValue: '请求体格式与端点不匹配，已自动转换格式：' }) + format.compat_rule}>
           {format.endpoint_format} ⚡ {format.compat_rule}
         </span>
       );
