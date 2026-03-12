@@ -11,13 +11,15 @@ import { Modal } from '@/components/ui/Modal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { ModelMappingDiagram, type ModelMappingDiagramRef } from '@/components/modelAlias';
+import { ProxyServerSelector } from '@/components/common/ProxyServerSelector';
 import {
   IconBot,
-  IconCode,
+  IconCheck,
   IconChevronUp,
   IconDownload,
   IconInfo,
   IconRefreshCw,
+  IconSettings,
   IconTrash2,
 } from '@/components/ui/icons';
 import type { TFunction } from 'i18next';
@@ -289,6 +291,29 @@ export function AuthFilesPage() {
   }>>({});
   const [healthCheckProxyUsed, setHealthCheckProxyUsed] = useState<boolean | null>(null); // 健康检查是否走了代理，null 表示未检查
   const [modelsModalItem, setModelsModalItem] = useState<AuthFileItem | null>(null); // 当前模型弹窗对应的认证文件，用于显示 proxy_url
+
+  // 全部检查结果（按凭证存储，用于卡片前的红绿指示器）
+  type AuthHealthResult = {
+    status: 'healthy' | 'unhealthy' | 'partial';
+    proxy_used?: boolean;
+    models: Record<string, { status: 'healthy' | 'unhealthy' | 'timeout'; message?: string; latency_ms?: number }>;
+  };
+  const [authHealthResults, setAuthHealthResults] = useState<Record<string, AuthHealthResult>>({});
+  const [checkAllHealthLoading, setCheckAllHealthLoading] = useState(false);
+  const [healthDetailModal, setHealthDetailModal] = useState<{
+    fileName: string;
+    models: Array<{ id: string; display_name?: string }>;
+    results: Record<string, { status: string; message?: string; latency_ms?: number }>;
+  } | null>(null);
+
+  // 凭证代理健康检查弹窗（从卡片直接打开）
+  const [proxyHealthModalFile, setProxyHealthModalFile] = useState<AuthFileItem | null>(null);
+  const [proxyHealthModalModels, setProxyHealthModalModels] = useState<AuthFileModelItem[]>([]);
+  const [proxyHealthModalModelsLoading, setProxyHealthModalModelsLoading] = useState(false);
+  const [proxyHealthModalModelsError, setProxyHealthModalModelsError] = useState<'unsupported' | null>(null);
+  const [proxyHealthModalHealthResults, setProxyHealthModalHealthResults] = useState<Record<string, { status: string; message?: string; latency_ms?: number }>>({});
+  const [proxyHealthModalHealthChecking, setProxyHealthModalHealthChecking] = useState(false);
+  const [proxyHealthModalProxyUsed, setProxyHealthModalProxyUsed] = useState<boolean | null>(null);
 
   // OAuth 排除模型相关
   const [excluded, setExcluded] = useState<Record<string, string[]>>({});
@@ -922,6 +947,13 @@ export function AuthFilesPage() {
     });
   };
 
+  const handlePrefixProxySelectorChange = (v: { proxyUrl: string; proxyDns?: string }) => {
+    setPrefixProxyEditor((prev) => {
+      if (!prev) return prev;
+      return { ...prev, proxyUrl: v.proxyUrl, proxyDns: v.proxyDns ?? '' };
+    });
+  };
+
   const handlePrefixProxySave = async () => {
     if (!prefixProxyEditor?.json) return;
     if (!prefixProxyDirty) return;
@@ -999,6 +1031,60 @@ export function AuthFilesPage() {
     setDetailModalOpen(true);
   };
 
+  // 打开凭证代理健康检查弹窗
+  const openProxyHealthModal = async (item: AuthFileItem) => {
+    if (disableControls || isRuntimeOnlyAuthFile(item)) return;
+    setProxyHealthModalFile(item);
+    setProxyHealthModalModels([]);
+    setProxyHealthModalModelsError(null);
+    setProxyHealthModalHealthResults({});
+    setProxyHealthModalProxyUsed(null);
+    setProxyHealthModalModelsLoading(true);
+    try {
+      const models = await authFilesApi.getModelsForAuthFile(item.name);
+      setProxyHealthModalModels(models);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '';
+      if (errorMessage.includes('404') || errorMessage.includes('not found') || errorMessage.includes('Not Found')) {
+        setProxyHealthModalModelsError('unsupported');
+      } else {
+        showNotification(`${t('notification.load_failed')}: ${errorMessage}`, 'error');
+      }
+    } finally {
+      setProxyHealthModalModelsLoading(false);
+    }
+  };
+
+  const runProxyHealthCheck = async () => {
+    if (!proxyHealthModalFile || proxyHealthModalModels.length === 0) return;
+    setProxyHealthModalHealthChecking(true);
+    setProxyHealthModalHealthResults({});
+    setProxyHealthModalProxyUsed(null);
+    try {
+      await authFilesApi.checkModelsHealthStream(
+        proxyHealthModalFile.name,
+        { concurrent: true, timeout: 10 },
+        {
+          onMeta: (meta) => setProxyHealthModalProxyUsed(meta.proxy_used),
+          onResult: (r) => {
+            setProxyHealthModalHealthResults((prev) => ({
+              ...prev,
+              [r.model_id]: { status: r.status, message: r.message, latency_ms: r.latency_ms },
+            }));
+          },
+          onDone: () => {
+            setProxyHealthModalHealthChecking(false);
+            showNotification(t('auth_files.health_check_all_done', { defaultValue: '检查完成' }), 'success');
+          },
+        }
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t('notification.load_failed');
+      showNotification(msg, 'error');
+      setProxyHealthModalHealthChecking(false);
+    }
+  };
+
   // 显示模型列表
   const showModels = async (item: AuthFileItem) => {
     setModelsFileName(item.name);
@@ -1038,6 +1124,56 @@ export function AuthFilesPage() {
     }
   };
 
+  // 全部检查：对当前页所有凭证执行健康检查
+  const handleCheckAllHealth = useCallback(async () => {
+    if (checkAllHealthLoading || disableControls) return;
+    const toCheck = pageItems.filter((item) => !isRuntimeOnlyAuthFile(item));
+    if (toCheck.length === 0) {
+      showNotification(t('auth_files.health_check_no_files', { defaultValue: '没有可检查的凭证' }), 'info');
+      return;
+    }
+    setCheckAllHealthLoading(true);
+    const nextResults: Record<string, AuthHealthResult> = { ...authHealthResults };
+    for (const item of toCheck) {
+      const fileName = item.name;
+      try {
+        const models = await authFilesApi.getModelsForAuthFile(fileName);
+        if (models.length === 0) continue;
+        const modelsMap: AuthHealthResult['models'] = {};
+        let proxyUsed = false;
+        await authFilesApi.checkModelsHealthStream(fileName, { concurrent: true, timeout: 10 }, {
+          onMeta: (meta) => {
+            proxyUsed = meta.proxy_used;
+          },
+          onResult: (r) => {
+            modelsMap[r.model_id] = {
+              status: r.status as 'healthy' | 'unhealthy' | 'timeout',
+              message: r.message,
+              latency_ms: r.latency_ms,
+            };
+          },
+          onDone: () => {
+            const entries = Object.values(modelsMap);
+            const healthy = entries.filter((e) => e.status === 'healthy').length;
+            const unhealthy = entries.filter((e) => e.status !== 'healthy').length;
+            let status: AuthHealthResult['status'] = 'healthy';
+            if (unhealthy > 0 && healthy === 0) status = 'unhealthy';
+            else if (unhealthy > 0) status = 'partial';
+            nextResults[fileName] = { status, proxy_used: proxyUsed, models: { ...modelsMap } };
+          },
+        });
+      } catch {
+        nextResults[fileName] = {
+          status: 'unhealthy',
+          models: {},
+        };
+      }
+    }
+    setAuthHealthResults(nextResults);
+    setCheckAllHealthLoading(false);
+    showNotification(t('auth_files.health_check_all_done', { defaultValue: '全部检查完成' }), 'success');
+  }, [checkAllHealthLoading, disableControls, pageItems, authHealthResults, showNotification, t]);
+
   // 健康检查（流式：检查完成一个返回一个，超过 30s 的显示为超时）
   const handleHealthCheck = async () => {
     if (!modelsFileName || modelsList.length === 0) {
@@ -1048,6 +1184,8 @@ export function AuthFilesPage() {
     setHealthResults({});
     setHealthCheckProxyUsed(null);
     const streamResultsRef: Array<{ status: 'healthy' | 'unhealthy' | 'timeout' }> = [];
+    const streamResultsMapRef: Record<string, { status: 'healthy' | 'unhealthy' | 'timeout'; message?: string; latency_ms?: number }> = {};
+    let proxyUsedForAuth = false;
 
     try {
       await authFilesApi.checkModelsHealthStream(
@@ -1055,10 +1193,16 @@ export function AuthFilesPage() {
         { concurrent: true, timeout: 10 },
         {
           onMeta: (meta) => {
+            proxyUsedForAuth = meta.proxy_used;
             setHealthCheckProxyUsed(meta.proxy_used);
           },
           onResult: (item) => {
             streamResultsRef.push({ status: item.status });
+            streamResultsMapRef[item.model_id] = {
+              status: item.status,
+              message: item.message,
+              latency_ms: item.latency_ms,
+            };
             setHealthResults((prev) => ({
               ...prev,
               [item.model_id]: {
@@ -1072,6 +1216,20 @@ export function AuthFilesPage() {
             const healthy_count = streamResultsRef.filter((r) => r.status === 'healthy').length;
             const unhealthy_count = streamResultsRef.filter((r) => r.status === 'unhealthy').length;
             const timeout_count = streamResultsRef.filter((r) => r.status === 'timeout').length;
+
+            setAuthHealthResults((prev) => ({
+              ...prev,
+              [modelsFileName]: {
+                status:
+                  unhealthy_count === 0 && timeout_count === 0
+                    ? 'healthy'
+                    : healthy_count === 0
+                      ? 'unhealthy'
+                      : 'partial',
+                proxy_used: proxyUsedForAuth,
+                models: { ...streamResultsMapRef },
+              },
+            }));
 
             if (unhealthy_count === 0 && timeout_count === 0 && healthy_count > 0) {
               showNotification(
@@ -1159,10 +1317,11 @@ export function AuthFilesPage() {
 
       if (result.models.length > 0) {
         const modelResult = result.models[0];
+        const modelStatus = modelResult.status as 'healthy' | 'unhealthy' | 'timeout';
         setHealthResults((prev) => ({
           ...prev,
           [modelResult.model_id]: {
-            status: modelResult.status,
+            status: modelStatus,
             message: modelResult.message,
             latency_ms: modelResult.latency_ms,
           },
@@ -1170,6 +1329,16 @@ export function AuthFilesPage() {
         if (typeof result.proxy_used === 'boolean') {
           setHealthCheckProxyUsed(result.proxy_used);
         }
+
+        setAuthHealthResults((prev) => {
+          const existing = prev[modelsFileName]?.models ?? {};
+          const models = { ...existing, [modelResult.model_id]: { status: modelStatus, message: modelResult.message, latency_ms: modelResult.latency_ms } };
+          const entries = Object.values(models);
+          const healthy = entries.filter((e) => e.status === 'healthy').length;
+          const unhealthy = entries.filter((e) => e.status !== 'healthy').length;
+          const status = unhealthy === 0 ? 'healthy' : healthy === 0 ? 'unhealthy' : 'partial';
+          return { ...prev, [modelsFileName]: { status, proxy_used: result.proxy_used, models } };
+        });
 
         if (modelResult.status === 'healthy') {
           showNotification(
@@ -1793,6 +1962,38 @@ export function AuthFilesPage() {
         >
           <div className={styles.fileCardMain}>
             <div className={styles.cardHeader}>
+              {authHealthResults[item.name] && (
+                <span
+                  className={`${styles.healthIndicator} ${
+                    authHealthResults[item.name].status === 'healthy'
+                      ? styles.healthIndicatorHealthy
+                      : authHealthResults[item.name].status === 'partial'
+                        ? styles.healthIndicatorPartial
+                        : styles.healthIndicatorUnhealthy
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const r = authHealthResults[item.name];
+                    setHealthDetailModal({
+                      fileName: item.name,
+                      models: Object.keys(r.models).map((id) => ({ id })),
+                      results: r.models,
+                    });
+                  }}
+                  title={t('auth_files.health_detail_click', { defaultValue: '点击查看请求/响应详情' })}
+                >
+                  {(() => {
+                    const r = authHealthResults[item.name];
+                    const models = Object.values(r.models);
+                    const healthy = models.filter((m) => m.status === 'healthy').length;
+                    const unhealthy = models.filter((m) => m.status !== 'healthy').length;
+                    const avgLatency = unhealthy === 0 && healthy > 0
+                      ? Math.round(models.reduce((s, m) => s + (m.latency_ms ?? 0), 0) / healthy)
+                      : null;
+                    return avgLatency !== null ? `${avgLatency}ms` : unhealthy > 0 ? `✗${unhealthy}` : `✓${healthy}`;
+                  })()}
+                </span>
+              )}
               <span
                 className={styles.typeBadge}
                 style={{
@@ -1864,16 +2065,26 @@ export function AuthFilesPage() {
                   >
                     <IconDownload className={styles.actionIcon} size={16} />
                   </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void openPrefixProxyEditor(item.name)}
-                    className={styles.iconButton}
-                    title={t('auth_files.prefix_proxy_button')}
-                    disabled={disableControls}
-                  >
-                    <IconCode className={styles.actionIcon} size={16} />
-                  </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void openPrefixProxyEditor(item.name)}
+                  className={styles.iconButton}
+                  title={t('auth_files.proxy_config_button', { defaultValue: '配置代理' })}
+                  disabled={disableControls}
+                >
+                  <IconSettings className={styles.actionIcon} size={16} />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void openProxyHealthModal(item)}
+                  className={styles.iconButton}
+                  title={t('auth_files.proxy_health_button', { defaultValue: '检查代理健康' })}
+                  disabled={disableControls}
+                >
+                  <IconCheck className={styles.actionIcon} size={16} />
+                </Button>
                   <Button
                     variant="danger"
                     size="sm"
@@ -1953,6 +2164,16 @@ export function AuthFilesPage() {
         title={titleNode}
         extra={
           <div className={styles.headerActions}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void handleCheckAllHealth()}
+              loading={checkAllHealthLoading}
+              disabled={disableControls || loading || checkAllHealthLoading}
+              title={t('auth_files.health_check_all_button', { defaultValue: '全部检查' })}
+            >
+              {t('auth_files.health_check_all_button', { defaultValue: '全部检查' })}
+            </Button>
             <Button variant="secondary" size="sm" onClick={handleHeaderRefresh} disabled={loading}>
               {t('common.refresh')}
             </Button>
@@ -2352,11 +2573,19 @@ export function AuthFilesPage() {
                       : ''
                   }`}
                   onClick={() => {
-                    navigator.clipboard.writeText(model.id);
-                    showNotification(
-                      t('notification.link_copied', { defaultValue: '已复制到剪贴板' }),
-                      'success'
-                    );
+                    if (hasHealthResult) {
+                      setHealthDetailModal({
+                        fileName: modelsFileName,
+                        models: [{ id: model.id, display_name: model.display_name }],
+                        results: { [model.id]: healthResult },
+                      });
+                    } else {
+                      navigator.clipboard.writeText(model.id);
+                      showNotification(
+                        t('notification.link_copied', { defaultValue: '已复制到剪贴板' }),
+                        'success'
+                      );
+                    }
                   }}
                   title={
                     isExcluded
@@ -2423,6 +2652,250 @@ export function AuthFilesPage() {
               );
             })}
           </div>
+        )}
+      </Modal>
+
+      {/* 健康检查详情弹窗：请求/响应/报错 */}
+      <Modal
+        open={Boolean(healthDetailModal)}
+        onClose={() => setHealthDetailModal(null)}
+        title={
+          healthDetailModal
+            ? `${t('auth_files.health_detail_title', { defaultValue: '健康检查详情' })} - ${healthDetailModal.fileName}`
+            : ''
+        }
+        width={640}
+        footer={
+          <Button variant="secondary" onClick={() => setHealthDetailModal(null)}>
+            {t('common.close')}
+          </Button>
+        }
+      >
+        {healthDetailModal && (
+          <div className={styles.healthDetailContent}>
+            {healthDetailModal.models.map((model) => {
+              const res = healthDetailModal.results[model.id];
+              if (!res) return null;
+              const isHealthy = res.status === 'healthy';
+              const requestJson = JSON.stringify(
+                {
+                  model: model.id,
+                  messages: [
+                    { role: 'user', content: 'hi' },
+                    { role: 'system', content: 'test' },
+                  ],
+                  stream: true,
+                  max_tokens: 1,
+                },
+                null,
+                2
+              );
+              return (
+                <div
+                  key={model.id}
+                  className={`${styles.healthDetailItem} ${
+                    isHealthy ? styles.healthDetailItemHealthy : styles.healthDetailItemUnhealthy
+                  }`}
+                >
+                  <div className={styles.healthDetailItemHeader}>
+                    <span className={styles.healthDetailModelId}>{model.id}</span>
+                    <span
+                      className={
+                        isHealthy
+                          ? styles.healthDetailBadgeHealthy
+                          : res.status === 'timeout'
+                            ? styles.healthDetailBadgeTimeout
+                            : styles.healthDetailBadgeUnhealthy
+                      }
+                    >
+                      {isHealthy
+                        ? `✓ ${res.latency_ms ?? '-'}ms`
+                        : res.status === 'timeout'
+                          ? t('auth_files.health_status_timeout', { defaultValue: '超时' })
+                          : t('auth_files.health_status_unhealthy', { defaultValue: '异常' })}
+                    </span>
+                  </div>
+                  <div className={styles.healthDetailSection}>
+                    <div className={styles.healthDetailLabel}>
+                      {t('auth_files.health_detail_request', { defaultValue: '测试请求' })}
+                    </div>
+                    <pre className={styles.healthDetailPre}>{requestJson}</pre>
+                  </div>
+                  <div className={styles.healthDetailSection}>
+                    <div className={styles.healthDetailLabel}>
+                      {t('auth_files.health_detail_response', { defaultValue: '响应/报错' })}
+                    </div>
+                    <pre className={styles.healthDetailPre}>
+                      {isHealthy
+                        ? `200 OK\n${t('auth_files.health_detail_success', { defaultValue: '成功' })} (${res.latency_ms ?? '-'}ms)`
+                        : res.message || t('common.unknown_error')}
+                    </pre>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Modal>
+
+      {/* 凭证代理健康检查弹窗（从卡片打开） */}
+      <Modal
+        open={Boolean(proxyHealthModalFile)}
+        onClose={() => {
+          setProxyHealthModalFile(null);
+          setProxyHealthModalModels([]);
+          setProxyHealthModalHealthResults({});
+          setProxyHealthModalProxyUsed(null);
+        }}
+        title={
+          proxyHealthModalFile
+            ? `${t('auth_files.proxy_health_button', { defaultValue: '检查代理健康' })} - ${proxyHealthModalFile.name}`
+            : ''
+        }
+        width={560}
+        footer={
+          <>
+            <div className={styles.modelsModalFooterLeft}>
+              <span
+                className={styles.proxyUrlText}
+                title={String(proxyHealthModalFile?.proxy_url ?? proxyHealthModalFile?.['proxy_url'] ?? '')}
+              >
+                {String(proxyHealthModalFile?.proxy_url ?? proxyHealthModalFile?.['proxy_url'] ?? '').trim()
+                  ? (() => {
+                      const url = String(proxyHealthModalFile?.proxy_url ?? proxyHealthModalFile?.['proxy_url'] ?? '');
+                      return url.length > 40 ? `${url.slice(0, 40)}…` : url;
+                    })()
+                  : t('auth_files.proxy_not_configured', { defaultValue: '未配置代理' })}
+              </span>
+              {proxyHealthModalProxyUsed !== null && (
+                <span
+                  className={
+                    proxyHealthModalProxyUsed ? styles.proxyDotUsed : styles.proxyDotUnused
+                  }
+                  title={
+                    proxyHealthModalProxyUsed
+                      ? t('auth_files.proxy_used_tooltip', { defaultValue: '代理：已使用' })
+                      : t('auth_files.proxy_not_used_tooltip', { defaultValue: '代理：未使用' })
+                  }
+                />
+              )}
+            </div>
+            <Button
+              variant="secondary"
+              onClick={runProxyHealthCheck}
+              loading={proxyHealthModalHealthChecking}
+              disabled={
+                disableControls ||
+                proxyHealthModalModelsLoading ||
+                proxyHealthModalModels.length === 0 ||
+                proxyHealthModalHealthChecking
+              }
+            >
+              {t('auth_files.health_check_button', { defaultValue: '健康检查' })}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setProxyHealthModalFile(null);
+                setProxyHealthModalModels([]);
+                setProxyHealthModalHealthResults({});
+                setProxyHealthModalProxyUsed(null);
+              }}
+            >
+              {t('common.close')}
+            </Button>
+          </>
+        }
+      >
+        {proxyHealthModalFile && (
+          <>
+            {proxyHealthModalModelsLoading ? (
+              <div className={styles.hint}>
+                {t('auth_files.models_loading', { defaultValue: '正在加载模型列表...' })}
+              </div>
+            ) : proxyHealthModalModelsError === 'unsupported' ? (
+              <EmptyState
+                title={t('auth_files.models_unsupported', { defaultValue: '当前版本不支持此功能' })}
+                description={t('auth_files.models_unsupported_desc', {
+                  defaultValue: '请更新 CLI Proxy API 到最新版本后重试',
+                })}
+              />
+            ) : proxyHealthModalModels.length === 0 ? (
+              <EmptyState
+                title={t('auth_files.models_empty', { defaultValue: '该凭证暂无可用模型' })}
+                description={t('auth_files.models_empty_desc', {
+                  defaultValue: '该认证凭证可能尚未被服务器加载或没有绑定任何模型',
+                })}
+              />
+            ) : (
+              <div className={styles.modelsList}>
+                {proxyHealthModalModels.map((model) => {
+                  const healthResult = proxyHealthModalHealthResults[model.id];
+                  const hasHealthResult = healthResult !== undefined;
+                  return (
+                    <div
+                      key={model.id}
+                      className={`${styles.modelItem} ${
+                        hasHealthResult
+                          ? healthResult.status === 'healthy'
+                            ? styles.modelItemHealthy
+                            : healthResult.status === 'timeout'
+                              ? styles.modelItemTimeout
+                              : styles.modelItemUnhealthy
+                          : ''
+                      }`}
+                      onClick={() =>
+                        hasHealthResult &&
+                        setHealthDetailModal({
+                          fileName: proxyHealthModalFile.name,
+                          models: [{ id: model.id, display_name: model.display_name }],
+                          results: { [model.id]: healthResult },
+                        })
+                      }
+                      title={
+                        hasHealthResult
+                          ? healthResult.status === 'healthy'
+                            ? `${t('auth_files.health_status_healthy', { defaultValue: '健康' })}${healthResult.latency_ms ? ` (${healthResult.latency_ms}ms)` : ''}`
+                            : healthResult.status === 'timeout'
+                              ? t('auth_files.health_status_timeout', { defaultValue: '超时' })
+                              : `${t('auth_files.health_status_unhealthy', { defaultValue: '异常' })}: ${healthResult.message || ''}`
+                          : t('common.copy', { defaultValue: '点击复制' })
+                      }
+                    >
+                      <div className={styles.modelInfo}>
+                        <span className={styles.modelId}>{model.id}</span>
+                        {model.display_name && model.display_name !== model.id && (
+                          <span className={styles.modelDisplayName}>{model.display_name}</span>
+                        )}
+                        {hasHealthResult && (
+                          <span
+                            className={
+                              healthResult.status === 'healthy'
+                                ? styles.modelHealthBadge
+                                : healthResult.status === 'timeout'
+                                  ? styles.modelHealthBadgeTimeout
+                                  : styles.modelHealthBadgeUnhealthy
+                            }
+                          >
+                            {healthResult.status === 'healthy' ? (
+                              <>
+                                {t('auth_files.health_status_healthy', { defaultValue: '健康' })}
+                                {healthResult.latency_ms && ` (${healthResult.latency_ms}ms)`}
+                              </>
+                            ) : healthResult.status === 'timeout' ? (
+                              t('auth_files.health_status_timeout', { defaultValue: '超时' })
+                            ) : (
+                              t('auth_files.health_status_unhealthy', { defaultValue: '异常' })
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </Modal>
 
@@ -2493,24 +2966,15 @@ export function AuthFilesPage() {
                     }
                     onChange={(e) => handlePrefixProxyChange('prefix', e.target.value)}
                   />
-                  <Input
-                    label={t('auth_files.proxy_url_label')}
-                    value={prefixProxyEditor.proxyUrl}
-                    placeholder={t('auth_files.proxy_url_placeholder')}
+                  <ProxyServerSelector
+                    value={{
+                      proxyUrl: prefixProxyEditor.proxyUrl,
+                      proxyDns: prefixProxyEditor.proxyDns,
+                    }}
+                    onChange={handlePrefixProxySelectorChange}
                     disabled={
                       disableControls || prefixProxyEditor.saving || !prefixProxyEditor.json
                     }
-                    onChange={(e) => handlePrefixProxyChange('proxyUrl', e.target.value)}
-                  />
-                  <Input
-                    label={t('common.proxy_dns_label')}
-                    value={prefixProxyEditor.proxyDns}
-                    placeholder={t('common.proxy_dns_placeholder')}
-                    disabled={
-                      disableControls || prefixProxyEditor.saving || !prefixProxyEditor.json
-                    }
-                    onChange={(e) => handlePrefixProxyChange('proxyDns', e.target.value)}
-                    hint={t('common.proxy_dns_hint')}
                   />
                 </div>
               </>

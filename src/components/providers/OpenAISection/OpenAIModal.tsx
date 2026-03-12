@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { HeaderInputList } from '@/components/ui/HeaderInputList';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { ProxyServerSelector } from '@/components/common/ProxyServerSelector';
 import { ModelInputList } from '@/components/ui/ModelInputList';
 import { modelsToEntries } from '@/components/ui/modelInputListUtils';
 import { useNotificationStore } from '@/stores';
@@ -71,6 +72,12 @@ export function OpenAIModal({
       const next = list.map((entry, i) => (i === idx ? { ...entry, [field]: value } : entry));
       setForm((prev) => ({ ...prev, apiKeyEntries: next }));
     };
+    const updateEntryProxy = (idx: number, v: { proxyUrl: string; proxyDns?: string }) => {
+      const next = list.map((entry, i) =>
+        i === idx ? { ...entry, proxyUrl: v.proxyUrl, proxyDns: v.proxyDns ?? '' } : entry
+      );
+      setForm((prev) => ({ ...prev, apiKeyEntries: next }));
+    };
 
     const removeEntry = (idx: number) => {
       const next = list.filter((_, i) => i !== idx);
@@ -94,16 +101,13 @@ export function OpenAIModal({
                 value={entry.apiKey}
                 onChange={(e) => updateEntry(index, 'apiKey', e.target.value)}
               />
-              <Input
-                label={t('common.proxy_url')}
-                value={entry.proxyUrl ?? ''}
-                onChange={(e) => updateEntry(index, 'proxyUrl', e.target.value)}
-              />
-              <Input
-                label={t('common.proxy_dns_label')}
-                placeholder={t('common.proxy_dns_placeholder')}
-                value={entry.proxyDns ?? ''}
-                onChange={(e) => updateEntry(index, 'proxyDns', e.target.value)}
+              <ProxyServerSelector
+                value={{
+                  proxyUrl: entry.proxyUrl ?? '',
+                  proxyDns: entry.proxyDns ?? '',
+                }}
+                onChange={(v) => updateEntryProxy(index, v)}
+                disabled={isSaving}
               />
             </div>
             <div className="item-actions">

@@ -353,6 +353,13 @@ export async function getCredential(credentialId: string): Promise<CredentialInf
   return apiClient.get(`${BASE_PATH}/credentials/${credentialId}`);
 }
 
+export async function patchCredentialStatus(
+  credentialId: string,
+  disabled: boolean
+): Promise<{ status: string; disabled: boolean }> {
+  return apiClient.patch(`${BASE_PATH}/credentials/${credentialId}/status`, { disabled });
+}
+
 // ================== Export all as unifiedRoutingApi ==================
 
 export const unifiedRoutingApi = {
@@ -406,4 +413,5 @@ export const unifiedRoutingApi = {
   // Credentials
   listCredentials,
   getCredential,
+  patchCredentialStatus,
 };

@@ -7,6 +7,7 @@ import { HeaderInputList } from '@/components/ui/HeaderInputList';
 import { Input } from '@/components/ui/Input';
 import { ModelInputList } from '@/components/ui/ModelInputList';
 import { Select } from '@/components/ui/Select';
+import { ProxyServerSelector } from '@/components/common/ProxyServerSelector';
 import { SecondaryScreenShell } from '@/components/common/SecondaryScreenShell';
 import { useEdgeSwipeBack } from '@/hooks/useEdgeSwipeBack';
 import { useNotificationStore } from '@/stores';
@@ -378,6 +379,16 @@ export function AiProvidersOpenAIEditPage() {
       setTestMessage('');
     };
 
+    const updateProxy = (idx: number, v: { proxyUrl: string; proxyDns?: string }) => {
+      const next = list.map((entry, i) =>
+        i === idx ? { ...entry, proxyUrl: v.proxyUrl, proxyDns: v.proxyDns ?? '' } : entry
+      );
+      setForm((prev) => ({ ...prev, apiKeyEntries: next }));
+      setDraftKeyTestStatus(idx, { status: 'idle', message: '' });
+      setTestStatus('idle');
+      setTestMessage('');
+    };
+
     const removeEntry = (idx: number) => {
       const next = list.filter((_, i) => i !== idx);
       const nextLength = next.length ? next.length : 1;
@@ -453,16 +464,20 @@ export function AiProvidersOpenAIEditPage() {
                   />
                 </div>
 
-                {/* Proxy 输入框 */}
+                {/* Proxy 配置（从列表选择或手动输入） */}
                 <div className={styles.keyTableColProxy}>
-                  <input
-                    type="text"
-                    value={entry.proxyUrl ?? ''}
-                    onChange={(e) => updateEntry(index, 'proxyUrl', e.target.value)}
-                    disabled={saving || disableControls || isTestingKeys}
-                    className={`input ${styles.keyTableInput}`}
-                    placeholder={t('ai_providers.openai_proxy_placeholder')}
-                  />
+                  <div className={styles.keyTableProxySelector}>
+                    <ProxyServerSelector
+                      value={{
+                        proxyUrl: entry.proxyUrl ?? '',
+                        proxyDns: entry.proxyDns ?? '',
+                      }}
+                      onChange={(v) => updateProxy(index, v)}
+                      disabled={saving || disableControls || isTestingKeys}
+                      proxyUrlOnly
+                      compact
+                    />
+                  </div>
                 </div>
 
                 {/* 操作按钮 */}

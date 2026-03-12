@@ -21,6 +21,7 @@ import { ConfigPage } from '@/pages/ConfigPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { SystemPage } from '@/pages/SystemPage';
 import { UnifiedRoutingPage } from '@/pages/UnifiedRoutingPage';
+import { ProxyServersPage } from '@/pages/ProxyServersPage';
 
 const mainRoutes = [
   { path: '/', element: <DashboardPage /> },
@@ -69,6 +70,7 @@ const mainRoutes = [
   { path: '/ai-providers', element: <AiProvidersPage /> },
   { path: '/unified-routing', element: <UnifiedRoutingPage /> },
   { path: '/ai-providers/*', element: <AiProvidersPage /> },
+  { path: '/proxy-servers', element: <ProxyServersPage /> },
   { path: '/auth-files', element: <AuthFilesPage /> },
   { path: '/auth-files/oauth-excluded', element: <AuthFilesOAuthExcludedEditPage /> },
   { path: '/auth-files/oauth-model-alias', element: <AuthFilesOAuthModelAliasEditPage /> },

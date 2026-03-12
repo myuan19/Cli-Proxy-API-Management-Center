@@ -5,9 +5,9 @@ import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import {
   IconBot,
   IconCheck,
-  IconCode,
   IconDownload,
   IconInfo,
+  IconSettings,
   IconTrash2,
 } from '@/components/ui/icons';
 import { ProviderStatusBar } from '@/components/providers/ProviderStatusBar';
@@ -45,6 +45,7 @@ export type AuthFileCardProps = {
   onShowDetails: (file: AuthFileItem) => void;
   onDownload: (name: string) => void;
   onOpenPrefixProxyEditor: (file: AuthFileItem) => void;
+  onOpenProxyHealthModal?: (file: AuthFileItem) => void;
   onDelete: (name: string) => void;
   onToggleStatus: (file: AuthFileItem, enabled: boolean) => void;
   onToggleSelect: (name: string) => void;
@@ -72,6 +73,7 @@ export function AuthFileCard(props: AuthFileCardProps) {
     onShowDetails,
     onDownload,
     onOpenPrefixProxyEditor,
+    onOpenProxyHealthModal,
     onDelete,
     onToggleStatus,
     onToggleSelect,
@@ -213,11 +215,23 @@ export function AuthFileCard(props: AuthFileCardProps) {
                   size="sm"
                   onClick={() => onOpenPrefixProxyEditor(file)}
                   className={styles.iconButton}
-                  title={t('auth_files.prefix_proxy_button')}
+                  title={t('auth_files.proxy_config_button', { defaultValue: '配置代理' })}
                   disabled={disableControls}
                 >
-                  <IconCode className={styles.actionIcon} size={16} />
+                  <IconSettings className={styles.actionIcon} size={16} />
                 </Button>
+                {onOpenProxyHealthModal && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onOpenProxyHealthModal(file)}
+                    className={styles.iconButton}
+                    title={t('auth_files.proxy_health_button', { defaultValue: '检查代理健康' })}
+                    disabled={disableControls}
+                  >
+                    <IconCheck className={styles.actionIcon} size={16} />
+                  </Button>
+                )}
                 <Button
                   variant="danger"
                   size="sm"

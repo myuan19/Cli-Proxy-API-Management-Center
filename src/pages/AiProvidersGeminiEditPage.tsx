@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { ProxyServerSelector } from '@/components/common/ProxyServerSelector';
 import { HeaderInputList } from '@/components/ui/HeaderInputList';
 import { ModelInputList } from '@/components/ui/ModelInputList';
 import { Modal } from '@/components/ui/Modal';
@@ -481,11 +482,12 @@ export function AiProvidersGeminiEditPage() {
               onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
               disabled={disableControls || saving}
             />
-            <Input
-              label={t('ai_providers.gemini_add_modal_proxy_label')}
-              placeholder={t('ai_providers.gemini_add_modal_proxy_placeholder')}
-              value={form.proxyUrl ?? ''}
-              onChange={(e) => setForm((prev) => ({ ...prev, proxyUrl: e.target.value }))}
+            <ProxyServerSelector
+              value={{
+                proxyUrl: form.proxyUrl ?? '',
+              }}
+              onChange={(v) => setForm((prev) => ({ ...prev, proxyUrl: v.proxyUrl }))}
+              proxyUrlOnly
               disabled={disableControls || saving}
             />
             <HeaderInputList

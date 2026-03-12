@@ -928,6 +928,35 @@
   min-width: 0;
 }
 
+.keyTableProxySelector {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+
+  :global(.proxy-server-selector) {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    .form-group {
+      margin-bottom: 0;
+
+      label {
+        font-size: 11px;
+        margin-bottom: 2px;
+      }
+    }
+
+    input.input,
+    select {
+      font-size: 12px;
+      padding: 6px 8px;
+      min-height: 32px;
+    }
+  }
+}
+
 .keyTableColAction {
   flex-shrink: 0;
   display: flex;

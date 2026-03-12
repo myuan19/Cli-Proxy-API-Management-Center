@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { HeaderInputList } from '@/components/ui/HeaderInputList';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { ProxyServerSelector } from '@/components/common/ProxyServerSelector';
 import { ModelInputList } from '@/components/ui/ModelInputList';
 import { modelsToEntries } from '@/components/ui/modelInputListUtils';
 import type { ProviderKeyConfig } from '@/types';
@@ -89,18 +90,19 @@ export function VertexModal({
         value={form.baseUrl ?? ''}
         onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
       />
-      <Input
-        label={t('ai_providers.vertex_add_modal_proxy_label')}
-        placeholder={t('ai_providers.vertex_add_modal_proxy_placeholder')}
-        value={form.proxyUrl ?? ''}
-        onChange={(e) => setForm((prev) => ({ ...prev, proxyUrl: e.target.value }))}
-      />
-      <Input
-        label={t('common.proxy_dns_label')}
-        placeholder={t('common.proxy_dns_placeholder')}
-        value={form.proxyDns ?? ''}
-        onChange={(e) => setForm((prev) => ({ ...prev, proxyDns: e.target.value }))}
-        hint={t('common.proxy_dns_hint')}
+      <ProxyServerSelector
+        value={{
+          proxyUrl: form.proxyUrl ?? '',
+          proxyDns: form.proxyDns ?? '',
+        }}
+        onChange={(v) =>
+          setForm((prev) => ({
+            ...prev,
+            proxyUrl: v.proxyUrl,
+            proxyDns: v.proxyDns ?? '',
+          }))
+        }
+        disabled={isSaving}
       />
       <HeaderInputList
         entries={form.headers}

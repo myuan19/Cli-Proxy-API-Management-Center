@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
+import { ProxyServerSelector } from '@/components/common/ProxyServerSelector';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { ConfigSection } from '@/components/config/ConfigSection';
 import { useNotificationStore } from '@/stores';
@@ -881,11 +882,10 @@ export function VisualConfigEditor({ values, disabled = false, onChange }: Visua
       <ConfigSection title={t('config_management.visual.sections.network.title')} description={t('config_management.visual.sections.network.description')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <SectionGrid>
-            <Input
-              label={t('config_management.visual.sections.network.proxy_url')}
-              placeholder="socks5://user:pass@127.0.0.1:1080/"
-              value={values.proxyUrl}
-              onChange={(e) => onChange({ proxyUrl: e.target.value })}
+            <ProxyServerSelector
+              value={{ proxyUrl: values.proxyUrl }}
+              onChange={(v) => onChange({ proxyUrl: v.proxyUrl })}
+              proxyUrlOnly
               disabled={disabled}
             />
             <Input

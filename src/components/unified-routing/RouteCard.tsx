@@ -566,6 +566,38 @@ export function RouteCard({
     onPipelineChange(route.id, { ...pipeline, layers: newLayers });
   }, [pipeline, onPipelineChange, route.id, isNotFoundCredential]);
 
+  const handleDeleteFailedTargetsInLayer = useCallback((layer: Layer) => {
+    if (!pipeline || !onPipelineChange) return;
+    const failedIds = layer.targets
+      .filter(t => healthCheckStatus[t.id]?.status === 'failed' || simulateStatus[t.id]?.status === 'failed')
+      .map(t => t.id);
+    if (failedIds.length === 0) return;
+    const newLayer = {
+      ...layer,
+      targets: layer.targets.filter(t => !failedIds.includes(t.id)),
+    };
+    const newLayers = pipeline.layers.map(l =>
+      l.level === layer.level ? newLayer : l
+    );
+    onPipelineChange(route.id, { ...pipeline, layers: newLayers });
+    setHealthCheckStatus(prev => {
+      const next = { ...prev };
+      failedIds.forEach(id => delete next[id]);
+      return next;
+    });
+    setSimulateStatus(prev => {
+      const next = { ...prev };
+      failedIds.forEach(id => delete next[id]);
+      return next;
+    });
+  }, [pipeline, onPipelineChange, route.id, healthCheckStatus, simulateStatus]);
+
+  const getFailedTargetCountInLayer = useCallback((layer: Layer) => {
+    return layer.targets.filter(t =>
+      healthCheckStatus[t.id]?.status === 'failed' || simulateStatus[t.id]?.status === 'failed'
+    ).length;
+  }, [healthCheckStatus, simulateStatus]);
+
   const hasNotFoundTargets = useCallback((layer: Layer) => {
     return layer.targets.some(t => isNotFoundCredential(t.credential_id));
   }, [isNotFoundCredential]);
@@ -727,6 +759,23 @@ export function RouteCard({
                             disabled={disabled}
                           >
                             {t('unified_routing.cleanup_invalid', { defaultValue: '清除无效' })}
+                          </Button>
+                        )}
+                        {getFailedTargetCountInLayer(layer) > 0 && (
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleDeleteFailedTargetsInLayer(layer)}
+                            disabled={disabled || checkingAll || simulating}
+                            title={t('ai_providers.delete_all_failed_nodes', {
+                              count: getFailedTargetCountInLayer(layer),
+                              defaultValue: `删除 ${getFailedTargetCountInLayer(layer)} 个失败节点`,
+                            })}
+                          >
+                            {t('unified_routing.delete_failed_in_layer', {
+                              count: getFailedTargetCountInLayer(layer),
+                              defaultValue: `删除 ${getFailedTargetCountInLayer(layer)} 个失败`,
+                            })}
                           </Button>
                         )}
                         <Button

@@ -11,7 +11,6 @@ import { useState, useMemo, useCallback, useEffect, useImperativeHandle, forward
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { IconBot } from '@/components/ui/icons';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { unifiedRoutingApi } from '@/services/api/unifiedRouting';
 import { getCredentialDisplayLabel } from '@/utils/unifiedRouting';
@@ -20,6 +19,26 @@ import styles from './CredentialsOverview.module.scss';
 
 const CREDENTIALS_PAGE_SIZE = 6;
 const CHECK_CONCURRENCY = 10;
+const CUSTOM_MODELS_STORAGE_KEY = 'unified-routing-custom-models';
+
+function loadCustomModelsFromStorage(): string[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_MODELS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomModelsToStorage(models: string[]) {
+  try {
+    localStorage.setItem(CUSTOM_MODELS_STORAGE_KEY, JSON.stringify(models));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 interface CredentialsOverviewProps {
   credentials: CredentialInfo[];
@@ -58,7 +77,7 @@ export const CredentialsOverview = forwardRef<CredentialsOverviewRef, Credential
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
   const [batchAddModalOpen, setBatchAddModalOpen] = useState(false);
   const [batchAddTarget, setBatchAddTarget] = useState<{ routeId: string; layerLevel: number } | null>(null);
-  const [customModels, setCustomModels] = useState<string[]>([]);
+  const [customModels, setCustomModels] = useState<string[]>(loadCustomModelsFromStorage);
   const [customModelInput, setCustomModelInput] = useState('');
 
   const [credentialCheckStatus, setCredentialCheckStatus] = useState<Record<string, 'success' | 'error'>>({});
@@ -80,6 +99,11 @@ export const CredentialsOverview = forwardRef<CredentialsOverviewRef, Credential
   }, [credentials]);
 
   const providers = useMemo(() => Object.keys(groupedCredentials).sort(), [groupedCredentials]);
+
+  // 持久化自定义模型列表到 localStorage
+  useEffect(() => {
+    saveCustomModelsToStorage(customModels);
+  }, [customModels]);
 
   // 默认展开所有 provider 分组（仅首次加载时，不覆盖用户手动折叠）
   const [hasInitializedExpanded, setHasInitializedExpanded] = useState(false);
@@ -420,13 +444,12 @@ export const CredentialsOverview = forwardRef<CredentialsOverviewRef, Credential
                     <div className={styles.providerBody}>
                       <div className={styles.credentialGrid}>
                         {pageCreds.map(cred => {
-                          const isSelected = addingModelsMode && selectedCredentialIds.has(cred.id);
+                          const isSelected = selectedCredentialIds.has(cred.id);
                           const checkStatus = credentialCheckStatus[cred.id];
                           const isDisabled = cred.status === 'disabled';
                           const cardClasses = [
                             styles.credentialCard,
                             isSelected && styles.credentialCardSelected,
-                            !addingModelsMode && styles.credentialCardReadOnly,
                             !isDisabled && checkStatus === 'success' && styles.credentialCardSuccess,
                             !isDisabled && checkStatus === 'error' && styles.credentialCardError,
                             isDisabled && styles.credentialCardDisabled,
@@ -436,35 +459,25 @@ export const CredentialsOverview = forwardRef<CredentialsOverviewRef, Credential
                             <div
                               key={cred.id}
                               className={cardClasses}
-                              onClick={() => {
-                                if (addingModelsMode) {
-                                  toggleCredentialSelection(cred.id);
-                                } else {
-                                  openCredentialModelsModal(cred);
-                                }
-                              }}
+                              onClick={() => toggleCredentialSelection(cred.id)}
                             >
-                              {addingModelsMode && (
-                                <input
-                                  type="checkbox"
-                                  className={styles.credentialCheckbox}
-                                  checked={isSelected}
-                                  readOnly
-                                />
-                              )}
+                              <input
+                                type="checkbox"
+                                className={styles.credentialCheckbox}
+                                checked={isSelected}
+                                readOnly
+                              />
                               <span className={styles.credentialLabel} title={cred.id}>
                                 {getCredentialDisplayLabel(cred)}
                               </span>
-                              {addingModelsMode && (
-                                <button
-                                  type="button"
-                                  className={styles.credentialModelsBtn}
-                                  onClick={(e) => { e.stopPropagation(); openCredentialModelsModal(cred); }}
-                                  title={t('unified_routing.view_models', { defaultValue: '查看模型' })}
-                                >
-                                  <IconBot size={14} />
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                className={styles.credentialViewBtn}
+                                onClick={(e) => { e.stopPropagation(); openCredentialModelsModal(cred); }}
+                                title={t('unified_routing.view_models', { defaultValue: '查看模型' })}
+                              >
+                                {t('unified_routing.view', { defaultValue: '查看' })}
+                              </button>
                             </div>
                           );
                         })}

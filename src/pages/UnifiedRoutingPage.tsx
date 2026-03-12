@@ -46,10 +46,10 @@ export function UnifiedRoutingPage() {
   } = useUnifiedRoutingStore();
 
   const [credOverviewExpanded, setCredOverviewExpanded] = useState(true);
-  const [addingModelsMode, setAddingModelsMode] = useState(false);
   const [credValidCombinationCount, setCredValidCombinationCount] = useState(0);
   const [credSelectedCount, setCredSelectedCount] = useState(0);
   const [credSelectedModels, setCredSelectedModels] = useState(0);
+  const addingModelsMode = credSelectedCount > 0;
   const [credCheckingAll, setCredCheckingAll] = useState(false);
   const credOverviewRef = useRef<{ openBatchAddModal: () => void; checkAllCredentials: () => void } | null>(null);
 
@@ -412,20 +412,37 @@ export function UnifiedRoutingPage() {
     }
   };
 
-  // Add layer handler
-  const handleAddLayer = (routeId: string) => {
-    const pipeline = routePipelines[routeId];
-    const maxLevel = pipeline?.layers.reduce((max, l) => Math.max(max, l.level), 0) || 0;
-    // Open target modal for new layer
-    setEditingTarget({ routeId, layerLevel: maxLevel + 1, target: null });
-    setTargetModalOpen(true);
+  // Add layer handler — 直接添加空层级，不打开目标弹窗
+  const handleAddLayer = async (routeId: string) => {
+    let pipeline = routePipelines[routeId];
+    if (!pipeline) {
+      pipeline = { route_id: routeId, layers: [] };
+    }
+    const maxLevel = pipeline.layers.reduce((max, l) => Math.max(max, l.level), 0);
+    const newLayer: Layer = {
+      level: maxLevel + 1,
+      strategy: 'round-robin',
+      targets: [],
+    };
+    const newPipeline: Pipeline = {
+      ...pipeline,
+      layers: [...pipeline.layers, newLayer].sort((a, b) => a.level - b.level),
+    };
+    await handlePipelineChange(routeId, newPipeline);
   };
 
-  // Configure pipeline (only used when route has no pipeline)
-  const handleConfigurePipeline = (routeId: string) => {
-    // Open target modal to add the first target (creates layer 1)
-    setEditingTarget({ routeId, layerLevel: 1, target: null });
-    setTargetModalOpen(true);
+  // Configure pipeline (only used when route has no pipeline) — 直接添加空层级 1
+  const handleConfigurePipeline = async (routeId: string) => {
+    const newLayer: Layer = {
+      level: 1,
+      strategy: 'round-robin',
+      targets: [],
+    };
+    const newPipeline: Pipeline = {
+      route_id: routeId,
+      layers: [newLayer],
+    };
+    await handlePipelineChange(routeId, newPipeline);
   };
 
   // Direct pipeline mutation (drag reorder, cleanup, batch add)
@@ -545,16 +562,6 @@ export function UnifiedRoutingPage() {
                   {credValidCombinationCount > 0 && ` (${credValidCombinationCount})`}
                 </Button>
               )}
-              <button
-                type="button"
-                className={`${styles.addToRouteToggle} ${addingModelsMode ? styles.addToRouteToggleActive : ''}`}
-                onClick={() => setAddingModelsMode(prev => !prev)}
-              >
-                <span className={styles.addToRouteCheck}>{addingModelsMode ? '\u2713' : ''}</span>
-                {addingModelsMode
-                  ? t('unified_routing.cancel', { defaultValue: '取消' })
-                  : t('unified_routing.add_to_route', { defaultValue: '添加到路由' })}
-              </button>
             </div>
           </div>
           <div style={{ display: credOverviewExpanded ? 'block' : 'none' }}>
