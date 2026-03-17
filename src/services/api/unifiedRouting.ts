@@ -409,6 +409,7 @@ export interface HookParamDef {
   description?: string;
   type?: 'text' | 'select' | 'number' | 'password';
   default?: string;
+  placeholder?: string;
   options?: string[];
   required?: boolean;
 }

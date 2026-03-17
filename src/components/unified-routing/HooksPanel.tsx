@@ -154,10 +154,10 @@ export function HooksPanel({ routes, disabled }: HooksPanelProps) {
     if (codes.length > 0) trigger.status_codes = codes;
     if (formErrorContains.trim()) trigger.error_contains = formErrorContains.trim();
 
-    // Only include non-empty params
-    const cleanParams: Record<string, string> = {};
+    // Send all form params (including empty) so cleared values persist; formParams comes from initParamDefaults
+    const paramsToSend: Record<string, string> = {};
     for (const [k, v] of Object.entries(formParams)) {
-      if (v !== '') cleanParams[k] = v;
+      paramsToSend[k] = v;
     }
 
     const payload: Partial<HookConfig> = {
@@ -167,7 +167,7 @@ export function HooksPanel({ routes, disabled }: HooksPanelProps) {
       enabled: formEnabled,
       trigger,
       timeout_seconds: formTimeout,
-      params: Object.keys(cleanParams).length > 0 ? cleanParams : undefined,
+      params: Object.keys(paramsToSend).length > 0 ? paramsToSend : undefined,
     };
 
     try {
@@ -546,7 +546,7 @@ export function HooksPanel({ routes, disabled }: HooksPanelProps) {
                     type={paramDef.type === 'password' ? 'password' : paramDef.type === 'number' ? 'number' : 'text'}
                     value={formParams[paramDef.name] ?? ''}
                     onChange={e => setFormParams(prev => ({ ...prev, [paramDef.name]: e.target.value }))}
-                    placeholder={paramDef.default || ''}
+                    placeholder={paramDef.placeholder ?? paramDef.default ?? ''}
                   />
                 )}
               </div>
