@@ -264,6 +264,7 @@ export function AuthFilesPage() {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
   const [keyStats, setKeyStats] = useState<KeyStats>({ bySource: {}, byAuthIndex: {} });
   const [usageDetails, setUsageDetails] = useState<UsageDetail[]>([]);
@@ -653,6 +654,40 @@ export function AuthFilesPage() {
   const start = (currentPage - 1) * pageSize;
   const pageItems = filtered.slice(start, start + pageSize);
 
+  // 多选删除：勾选逻辑
+  const toggleSelect = useCallback((name: string) => {
+    const item = files.find((f) => f.name === name);
+    if (item && isRuntimeOnlyAuthFile(item)) return;
+    setSelectedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, [files]);
+
+  const selectAllVisible = useCallback(() => {
+    const selectable = pageItems.filter((item) => !isRuntimeOnlyAuthFile(item));
+    setSelectedFiles(new Set(selectable.map((f) => f.name)));
+  }, [pageItems]);
+
+  const deselectAll = useCallback(() => setSelectedFiles(new Set()), []);
+
+  // 当文件列表变化时，清理已不存在的选中项
+  useEffect(() => {
+    if (selectedFiles.size === 0) return;
+    const existingNames = new Set(files.map((f) => f.name));
+    setSelectedFiles((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((name) => {
+        if (existingNames.has(name)) next.add(name);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [files, selectedFiles.size]);
+
   // 点击上传
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -829,6 +864,65 @@ export function AuthFilesPage() {
       },
     });
   };
+
+  // 批量删除选中的凭证
+  const handleBatchDelete = useCallback(() => {
+    const toDelete = Array.from(selectedFiles).filter((name) => {
+      const item = files.find((f) => f.name === name);
+      return item && !isRuntimeOnlyAuthFile(item);
+    });
+    if (toDelete.length === 0) return;
+
+    showConfirmation({
+      title: t('auth_files.batch_delete_title', { defaultValue: '删除选中的凭证' }),
+      message: t('auth_files.batch_delete_confirm', { count: toDelete.length, defaultValue: `确定要删除 ${toDelete.length} 个凭证吗？此操作不可恢复。` }),
+      variant: 'danger',
+      confirmText: t('common.confirm'),
+      onConfirm: async () => {
+        setDeletingAll(true);
+        const results = await Promise.allSettled(
+          toDelete.map((name) => authFilesApi.deleteFile(name))
+        );
+        const deleted: string[] = [];
+        let failCount = 0;
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            deleted.push(toDelete[index]);
+          } else {
+            failCount++;
+          }
+        });
+
+        if (deleted.length > 0) {
+          const deletedSet = new Set(deleted);
+          setFiles((prev) => prev.filter((f) => !deletedSet.has(f.name)));
+          setSelectedFiles((prev) => {
+            const next = new Set(prev);
+            deleted.forEach((n) => next.delete(n));
+            return next;
+          });
+          await loadKeyStats();
+        }
+
+        if (failCount === 0) {
+          showNotification(
+            t('auth_files.delete_filtered_success', { count: deleted.length, type: t('auth_files.filter_all') }),
+            'success'
+          );
+        } else {
+          showNotification(
+            t('auth_files.delete_filtered_partial', {
+              success: deleted.length,
+              failed: failCount,
+              type: t('auth_files.filter_all'),
+            }),
+            'warning'
+          );
+        }
+        setDeletingAll(false);
+      },
+    });
+  }, [files, selectedFiles, showConfirmation, showNotification, t, loadKeyStats]);
 
   // 下载文件
   const handleDownload = async (name: string) => {
@@ -1962,6 +2056,16 @@ export function AuthFilesPage() {
         >
           <div className={styles.fileCardMain}>
             <div className={styles.cardHeader}>
+              {!isRuntimeOnly && (
+                <input
+                  type="checkbox"
+                  className={styles.fileCardCheckbox}
+                  checked={selectedFiles.has(item.name)}
+                  onChange={() => toggleSelect(item.name)}
+                  onClick={(e) => e.stopPropagation()}
+                  title={t('auth_files.batch_select_hint', { defaultValue: '勾选以批量删除' })}
+                />
+              )}
               {authHealthResults[item.name] && (
                 <span
                   className={`${styles.healthIndicator} ${
@@ -2185,6 +2289,17 @@ export function AuthFilesPage() {
             >
               {t('auth_files.upload_button')}
             </Button>
+            {selectedFiles.size > 0 && (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleBatchDelete}
+                disabled={disableControls || deletingAll}
+                loading={deletingAll}
+            >
+                {t('auth_files.batch_delete_button', { count: selectedFiles.size, defaultValue: '批量删除 ({{count}})' })}
+              </Button>
+            )}
             <Button
               variant="danger"
               size="sm"
@@ -2212,6 +2327,31 @@ export function AuthFilesPage() {
         {/* 筛选区域 */}
         <div className={styles.filterSection}>
           {renderFilterTags()}
+
+          <div className={styles.batchSelectRow}>
+            <button
+              type="button"
+              className={styles.batchSelectLink}
+              onClick={selectAllVisible}
+              disabled={pageItems.length === 0 || disableControls}
+            >
+              {t('auth_files.select_all_visible', { defaultValue: '全选当前页' })}
+            </button>
+            <span className={styles.batchSelectDivider}>|</span>
+            <button
+              type="button"
+              className={styles.batchSelectLink}
+              onClick={deselectAll}
+              disabled={selectedFiles.size === 0}
+            >
+              {t('auth_files.deselect_all', { defaultValue: '取消全选' })}
+            </button>
+            {selectedFiles.size > 0 && (
+              <span className={styles.batchSelectCount}>
+                {t('auth_files.selected_count', { count: selectedFiles.size, defaultValue: '已选 {{count}} 个' })}
+              </span>
+            )}
+          </div>
 
           <div className={styles.filterControls}>
             <div className={styles.filterItem}>

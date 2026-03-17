@@ -12,3 +12,4 @@ export { SettingsPanel } from './SettingsPanel';
 export { CredentialsOverview } from './CredentialsOverview';
 export { RouteCard } from './RouteCard';
 export { RouteMonitor } from './RouteMonitor';
+export { HooksPanel } from './HooksPanel';

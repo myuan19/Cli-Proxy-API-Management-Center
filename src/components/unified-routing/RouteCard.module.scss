@@ -409,11 +409,16 @@
 }
 
 .emptyLayer {
+  min-height: 52px;
   padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   color: var(--text-tertiary);
   font-style: italic;
   background: var(--bg-secondary);
+  border: 1px dashed transparent;
   border-radius: 4px;
   transition: background 0.2s, border-color 0.2s;
 

@@ -1,0 +1,443 @@
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
+.empty {
+  text-align: center;
+  padding: 24px 16px;
+  color: var(--text-secondary, #888);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.emptyHint {
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.emptyCode {
+  display: inline-block;
+  text-align: left;
+  background: var(--bg-secondary, #f5f5f5);
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: monospace;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.scriptsDirHint {
+  padding: 8px 14px;
+  margin-bottom: 12px;
+  background: var(--bg-tertiary, #f0f4ff);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.hooksList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hookItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  background: var(--bg-primary, #fff);
+  gap: 12px;
+  transition: opacity 0.2s;
+}
+
+.hookItemDisabled {
+  opacity: 0.5;
+}
+
+.hookItemMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.hookItemHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.hookName {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary, #222);
+}
+
+.hookRoute {
+  font-size: 12px;
+  color: var(--text-tertiary, #aaa);
+  background: var(--bg-secondary, #f5f5f5);
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+
+.hookMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+}
+
+.hookDirBadge {
+  background: var(--bg-secondary, #f5f5f5);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  cursor: help;
+}
+
+.hookTrigger {
+  background: var(--bg-tertiary, #eef);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.hookItemActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ---- Logs ---- */
+
+.logsSection {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color, #e0e0e0);
+  padding-top: 12px;
+}
+
+.logsSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.logsList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.logItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--bg-hover, #f0f0f0);
+  }
+}
+
+.logItemSuccess {
+  border-left: 3px solid var(--color-success, #4caf50);
+}
+
+.logItemFail {
+  border-left: 3px solid var(--color-danger, #f44336);
+}
+
+.logTime {
+  flex-shrink: 0;
+  color: var(--text-secondary, #888);
+  font-size: 11px;
+  width: 140px;
+}
+
+.logHookName {
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.logHookDir {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  min-width: 80px;
+}
+
+.logRoute {
+  color: var(--text-tertiary, #aaa);
+  min-width: 60px;
+}
+
+.logReason {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logStatus {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.logStatusOk {
+  color: var(--color-success, #4caf50);
+}
+
+.logStatusFail {
+  color: var(--color-danger, #f44336);
+}
+
+/* ---- Form ---- */
+
+.formGroup {
+  margin-bottom: 14px;
+
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    color: var(--text-secondary, #555);
+  }
+}
+
+.formSelect {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 6px;
+  background: var(--bg-primary, #fff);
+  font-size: 14px;
+  color: var(--text-primary, #222);
+  outline: none;
+
+  &:focus {
+    border-color: var(--color-primary, #1976d2);
+  }
+}
+
+.noDirsWarning {
+  padding: 8px 12px;
+  background: var(--bg-warning, #fff3cd);
+  border: 1px solid var(--border-warning, #ffc107);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-warning, #856404);
+}
+
+.dirInfoPreview {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--bg-secondary, #f8f8f8);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.dirInfoPath {
+  font-family: monospace;
+  color: var(--text-primary, #333);
+  margin-bottom: 4px;
+}
+
+.dirInfoFiles {
+  color: var(--text-secondary, #888);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.dirInfoReadme {
+  margin-top: 6px;
+
+  pre {
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-color, #e0e0e0);
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    max-height: 120px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+  }
+}
+
+/* ---- Params ---- */
+
+.paramsSection {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-color, #e0e0e0);
+}
+
+.paramsSectionTitle {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: var(--text-primary, #333);
+}
+
+.paramRequired {
+  color: var(--color-danger, #f44336);
+}
+
+.paramDescription {
+  font-size: 11px;
+  color: var(--text-tertiary, #aaa);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+/* ---- Trigger ---- */
+
+.triggerLayout {
+  display: flex;
+  gap: 16px;
+  min-height: 300px;
+}
+
+.triggerFormSide {
+  flex: 0 0 auto;
+  width: 100%;
+  max-height: 500px;
+  overflow-y: auto;
+
+  .triggerLayout:has(.triggerLogSide) & {
+    width: 340px;
+    flex: 0 0 340px;
+  }
+}
+
+.triggerLogSide {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-color, #e0e0e0);
+  padding-left: 16px;
+}
+
+.triggerLogHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color, #f0f0f0);
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.triggerLogContent {
+  flex: 1;
+  overflow-y: auto;
+  background: #0d1117;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 450px;
+  color: #e6edf3;
+}
+
+.triggerLogLine {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #3fb950;
+}
+
+.triggerLogLineErr {
+  color: #f85149;
+}
+
+.triggerHint {
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  background: var(--bg-tertiary, #f0f4ff);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  line-height: 1.5;
+}
+
+/* ---- Log Detail ---- */
+
+.logDetail {
+  font-size: 13px;
+}
+
+.logDetailRow {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color, #f0f0f0);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.logDetailLabel {
+  flex-shrink: 0;
+  width: 100px;
+  font-weight: 600;
+  color: var(--text-secondary, #555);
+}
+
+.logDetailMono {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.logDetailError {
+  color: var(--color-danger, #f44336);
+  word-break: break-all;
+}
+
+.logDetailBlock {
+  margin-top: 12px;
+
+  label {
+    font-weight: 600;
+    font-size: 12px;
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-secondary, #555);
+  }
+
+  pre {
+    background: var(--bg-secondary, #f5f5f5);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    max-height: 200px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+  }
+}

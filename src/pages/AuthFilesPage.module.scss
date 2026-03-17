@@ -557,6 +557,49 @@
   line-height: 1.4;
 }
 
+.fileCardCheckbox {
+  flex-shrink: 0;
+  margin-right: $spacing-sm;
+  cursor: pointer;
+}
+
+.batchSelectRow {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.batchSelectLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: var(--link-color, var(--primary-color));
+  cursor: pointer;
+  text-decoration: underline;
+
+  &:hover:not(:disabled) {
+    color: var(--link-hover-color, var(--primary-hover));
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+.batchSelectDivider {
+  color: var(--text-tertiary);
+}
+
+.batchSelectCount {
+  margin-left: $spacing-xs;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
 .cardHeader {
   display: flex;
   align-items: center;

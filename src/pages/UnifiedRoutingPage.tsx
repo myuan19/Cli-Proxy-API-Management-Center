@@ -14,6 +14,7 @@ import {
   CredentialsOverview,
   RouteCard,
   RouteMonitor,
+  HooksPanel,
 } from '@/components/unified-routing';
 import { useUnifiedRoutingStore, useAuthStore, useNotificationStore } from '@/stores';
 import type { Route, Pipeline, Target, Layer } from '@/types';
@@ -632,6 +633,13 @@ export function UnifiedRoutingPage() {
           )}
         </Card>
       </section>
+
+      {/* Hooks Section */}
+      {routes.length > 0 && (
+        <section className={styles.section}>
+          <HooksPanel routes={routes} disabled={disableControls} />
+        </section>
+      )}
 
       {/* Route Monitor Section */}
       {routes.length > 0 && (

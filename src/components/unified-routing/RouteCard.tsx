@@ -368,6 +368,21 @@ export function RouteCard({
     const draggedTarget = sortedLayers[drag.srcLayerIdx]?.targets[drag.srcTargetIdx];
     const draggedId = draggedTarget?.id;
 
+    // Empty layers should win when the pointer is inside them.
+    // Otherwise the nearest existing target in another layer will always capture the drop.
+    for (let li = 0; li < sortedLayers.length; li++) {
+      const layer = sortedLayers[li];
+      const nonDraggedCount = layer.targets.filter(t => t.id !== draggedId).length;
+      if (nonDraggedCount > 0) continue;
+      const el = layerRefsByLevel.current.get(layer.level);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        setTargetDragDst({ layerIdx: li, targetIdx: 0 });
+        return;
+      }
+    }
+
     // Find closest non-dragged target by DOM position
     let closestId: string | null = null;
     let closestLayerLevel = -1;
@@ -402,20 +417,6 @@ export function RouteCard({
             return;
           }
         }
-      }
-    }
-
-    // Fallback: check empty layers or layers where only the dragged item exists
-    for (let li = 0; li < sortedLayers.length; li++) {
-      const layer = sortedLayers[li];
-      const nonDraggedCount = layer.targets.filter(t => t.id !== draggedId).length;
-      if (nonDraggedCount > 0) continue;
-      const el = layerRefsByLevel.current.get(layer.level);
-      if (!el) continue;
-      const rect = el.getBoundingClientRect();
-      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
-        setTargetDragDst({ layerIdx: li, targetIdx: 0 });
-        return;
       }
     }
   }, [getSortedLayers]);

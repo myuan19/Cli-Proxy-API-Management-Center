@@ -360,6 +360,166 @@ export async function patchCredentialStatus(
   return apiClient.patch(`${BASE_PATH}/credentials/${credentialId}/status`, { disabled });
 }
 
+// ================== Hooks ==================
+
+export interface HookTrigger {
+  on: 'failure' | 'success' | 'any';
+  status_codes?: number[];
+  error_contains?: string;
+}
+
+export interface HookConfig {
+  id: string;
+  route_id: string;
+  name: string;
+  enabled: boolean;
+  trigger: HookTrigger;
+  hook_dir: string;
+  params?: Record<string, string>;
+  timeout_seconds?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface HookExecutionLog {
+  id: string;
+  hook_id: string;
+  hook_name: string;
+  route_id: string;
+  route_name: string;
+  target_id: string;
+  credential_id: string;
+  model: string;
+  trigger_reason: string;
+  status_code?: number;
+  error_message?: string;
+  hook_dir: string;
+  script: string;
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+  success: boolean;
+  duration_ms: number;
+  timestamp: string;
+}
+
+export interface HookParamDef {
+  name: string;
+  label?: string;
+  description?: string;
+  type?: 'text' | 'select' | 'number' | 'password';
+  default?: string;
+  options?: string[];
+  required?: boolean;
+}
+
+export interface HookDirInfo {
+  name: string;
+  path: string;
+  has_run: boolean;
+  files?: string[];
+  readme?: string;
+  params?: HookParamDef[];
+}
+
+export async function listHooks(routeId?: string): Promise<{ hooks: HookConfig[]; total: number }> {
+  const params = routeId ? `?route_id=${encodeURIComponent(routeId)}` : '';
+  return apiClient.get(`${BASE_PATH}/hooks${params}`);
+}
+
+export async function getHook(hookId: string): Promise<HookConfig> {
+  return apiClient.get(`${BASE_PATH}/hooks/${encodeURIComponent(hookId)}`);
+}
+
+export async function createHook(hook: Partial<HookConfig>): Promise<HookConfig> {
+  return apiClient.post(`${BASE_PATH}/hooks`, hook);
+}
+
+export async function updateHook(hookId: string, hook: Partial<HookConfig>): Promise<HookConfig> {
+  return apiClient.put(`${BASE_PATH}/hooks/${encodeURIComponent(hookId)}`, hook);
+}
+
+export async function deleteHook(hookId: string): Promise<void> {
+  return apiClient.delete(`${BASE_PATH}/hooks/${encodeURIComponent(hookId)}`);
+}
+
+export async function listHookLogs(routeId?: string, hookId?: string, limit?: number): Promise<{ logs: HookExecutionLog[]; total: number }> {
+  const params = new URLSearchParams();
+  if (routeId) params.set('route_id', routeId);
+  if (hookId) params.set('hook_id', hookId);
+  if (limit) params.set('limit', String(limit));
+  const qs = params.toString();
+  return apiClient.get(`${BASE_PATH}/hooks/logs${qs ? '?' + qs : ''}`);
+}
+
+export async function clearHookLogs(): Promise<void> {
+  return apiClient.delete(`${BASE_PATH}/hooks/logs`);
+}
+
+export interface ManualTriggerRequest {
+  route_id?: string;
+  route_name?: string;
+  target_id?: string;
+  credential_id?: string;
+  model?: string;
+  status_code?: number;
+  error_message?: string;
+}
+
+export async function triggerHook(hookId: string, req: ManualTriggerRequest): Promise<HookExecutionLog> {
+  return apiClient.post(`${BASE_PATH}/hooks/${encodeURIComponent(hookId)}/trigger`, req);
+}
+
+export interface StreamTriggerCallbacks {
+  onOutput: (stream: 'stdout' | 'stderr', line: string) => void;
+  onDone: (result: HookExecutionLog) => void;
+  onError: (error: string) => void;
+}
+
+export async function triggerHookStream(
+  hookId: string,
+  req: ManualTriggerRequest,
+  callbacks: StreamTriggerCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  const path = `${BASE_PATH}/hooks/${encodeURIComponent(hookId)}/trigger-stream`;
+  const { url, headers } = apiClient.getStreamRequest(path.startsWith('/') ? path.slice(1) : path);
+  headers['Content-Type'] = 'application/json';
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(req),
+    signal,
+  });
+
+  if (!res.ok || !res.body) {
+    callbacks.onError(res.statusText || 'Stream request failed');
+    return;
+  }
+
+  await parseSSE(res.body, (event, data) => {
+    if (!data) return;
+    try {
+      if (event === 'output') {
+        const parsed = JSON.parse(data) as { stream: 'stdout' | 'stderr'; line: string };
+        callbacks.onOutput(parsed.stream, parsed.line);
+      } else if (event === 'done') {
+        callbacks.onDone(JSON.parse(data) as HookExecutionLog);
+      } else if (event === 'error') {
+        const parsed = JSON.parse(data) as { error: string };
+        callbacks.onError(parsed.error);
+      }
+    } catch {
+      // ignore parse errors
+    }
+  });
+}
+
+export async function listAvailableHookDirs(): Promise<{ dirs: HookDirInfo[]; total: number; scripts_dir: string }> {
+  return apiClient.get(`${BASE_PATH}/hooks/dirs`);
+}
+
 // ================== Export all as unifiedRoutingApi ==================
 
 export const unifiedRoutingApi = {
@@ -414,4 +574,16 @@ export const unifiedRoutingApi = {
   listCredentials,
   getCredential,
   patchCredentialStatus,
+
+  // Hooks
+  listHooks,
+  getHook,
+  createHook,
+  updateHook,
+  deleteHook,
+  triggerHook,
+  triggerHookStream,
+  listHookLogs,
+  clearHookLogs,
+  listAvailableHookDirs,
 };
